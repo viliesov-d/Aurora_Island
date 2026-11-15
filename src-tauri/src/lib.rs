@@ -1,4 +1,5 @@
 mod secure_key;
+mod audio;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -150,7 +151,7 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt])
+        .invoke_handler(tauri::generate_handler![system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
