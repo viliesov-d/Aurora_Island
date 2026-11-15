@@ -59,3 +59,26 @@ npm run tauri -- build --bundles nsis
 - Опитування SMTC — раз на 3 секунди при відкритій панелі і раз на 7 секунд у компактному стані, без окремих фонових процесів.
 
 Перевірка на реальному Windows: запустіть трек у Spotify / браузері, відкрийте вкладку Музика, перевірте кнопки, системний повзунок гучності, mute і стан відсутності плеєра. Результати CI підтверджують компіляцію, але не взаємодію із системними медіасесіями.
+
+
+## Island 1.2.10 reference: toolbox milestone
+
+The `feat/island-toolbox-2026-11-15` branch adds a native-looking **Інструменти** tab without replacing the existing Tauri/Windows media architecture.
+
+Implemented:
+- Manual text clipboard history, search, pin, delete and copy. Browser clipboard access is permission-dependent. **No global clipboard watcher or automatic paste**.
+- Session-only file shelf (add, list, save, remove). It **does not** yet support native drag-and-drop out of the island or persistence across application restarts.
+- Text conversion: case, whitespace, JSON, URL encoding, Unicode-safe Base64, copy and handoff to the existing AI chat.
+- Autosaved plain-text note.
+- User-selected weather city with live temperature/wind via Open-Meteo. Weather requests require internet access.
+- Local quick-links collection, with an HTTPS/HTTP scheme allowlist.
+- In-window command palette with calculator, distance/mass/temperature conversions, in-app search and AI handoff. Ctrl+K works while the app has keyboard focus; system-wide Alt+Space is not yet available.
+- Reminders stored locally with in-app due-time alerts while the app stays running.
+
+Already implemented before this milestone: 4 themes, pill open/close, repositioning, battery, timer, secure API key, AI chat, SMTC music and Core Audio volume.
+
+**Still to implement from the reference's feature list:** full Windows clipboard monitoring and secure paste, persistent native file shelf with drag-out, launcher for local apps/files and global search, global hotkeys, screen capture/markup/recording/OCR/QR/color picker, voice dictation, extended Windows controls (Bluetooth/Wi-Fi/VPN/power), native notification listener, downloads/OBS/Steam activity, AI agent hooks, media lyrics/equalizer, characters, full weather forecast/alerts, device selectors, and comprehensive Windows integration tests.
+
+The source archive of Island 1.2.10 contains images and documentation, not the original application code. These are original Aurora features inspired by its behavior rather than a copy.
+
+For Windows validation, also run `npm run tauri -- build --bundles nsis`, then manually verify WebView clipboard permissions, window hit-testing and weather requests. The frontend `npm run build` is not a substitute for Windows integration testing.
