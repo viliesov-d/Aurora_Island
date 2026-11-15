@@ -143,3 +143,17 @@ Not implemented by this foundational milestone: Atoll's complete multi-page feat
 - This is a focused initial system-events milestone inspired by Atoll; fullscreen/game handling, mic/camera privacy badges, downloads and third-party notifications are separate follow-ups.
 
 **Test on Windows:** volume up/down/mute with hardware keys, paused music, new track, startup, hidden/restored island, disable HUD, reduced-motion animations. In particular, ensure that a music title change is never misreported as a system notification from a different app.
+
+
+## Motion Engine v2 — click-only pill, shadow-free Windows overlay
+
+This is a **replacement of the interaction architecture**, not another spring/blur overlay:
+- A fixed 568 logical-pixel transparent WebView2 remains the same size for compact and expanded states. It starts **hidden**; on startup Aurora configures the Win32 non-client frame, the transparent window and a narrow click region, then displays it. No native resize on expand/collapse.
+- One CSS `clip-path: inset(... round ...)` of the full-size panel animates the same shell from capsule to panel, controlled by a single easing curve and the speed slider. Panel content fades separately without scaling the text. The native Win32 hit region opens before the clip starts; it shrinks after the animation finishes. The native mask matches the shell's geometry.
+- Every external shadow, backdrop glow and full-window Acrylic is disabled. Only color, thin inner highlights, gradients and rounded glass **inside** the island remain. This intentionally sacrifices true desktop refraction to eliminate the reported dark rectangle and ensure smoothness.
+- Win32 strips popup/extended titlebar styles; `DWMWA_NCRENDERING_POLICY = DISABLED` blocks DWM non-client caption drawing. Borderless state is reasserted after focus, tray restore and global hotkey. This addresses intermittent Windows titlebar buttons.
+- **Hover never opens the island.** Click the capsule/plus or use the global shortcut. Existing saved `hoverExpand` settings are overridden on load. The hidden recovery strip also restores **on click**, not hover.
+- Magnetic edge is **fully replaced** with a continuous vector silhouette driven by 4 independent time-based damped spring channels. Cursor proximity on corners is softly blended between edges, rather than abruptly switching directions. Native `GetCursorPos` only provides targets; requestAnimationFrame integrates the motion. The shape rests without animation when idle, and stops in reduced-motion mode.
+- The previous `motion.div layout="size"` that animated width and height while Win32 resized has been removed.
+
+**Windows acceptance checklist:** (1) no titlebar on startup, theme switch, tray restore or hotkey; (2) no rectangle/shadows around island in Classic/Glass/Soft/Neon even over a bright wallpaper; (3) never expands on hover; (4) repeated clicks open/close without skipped/missed frames; (5) magnetic contour is smooth at corners and returns to rest; (6) keyboard and mouse controls still work; (7) Windows scaling 100%/125%/150%/200%; (8) windows outside the hit region still receive clicks. Windows installer CI validates compilation, not these visual behaviors.
