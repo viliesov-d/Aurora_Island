@@ -118,7 +118,9 @@ export default function App() {
       });
       // Material and borderless state must finish BEFORE the window is shown,
       // otherwise WebView2 can flash the original Windows title bar.
-      await invoke("set_native_material",{theme:prefs.theme});
+      await invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
+        console.warn("Native material fallback:",err);
+      });
       initializedNative.current=true;
       materialReady.current=true;
       await w.show(); // Never display the native window before mask/chrome setup.
