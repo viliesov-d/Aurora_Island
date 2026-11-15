@@ -53,7 +53,7 @@ async fn stream_chat(app: tauri::AppHandle, messages: Vec<ChatMessage>, model: S
     let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("openai-key.dpapi");
     let encrypted = std::fs::read(path).map_err(|_| "Спочатку додайте API-ключ у налаштуваннях чату.".to_string())?;
     let key = String::from_utf8(secure_key::unprotect(&encrypted)?).map_err(|e| e.to_string())?;
-    let input: Vec<serde_json::Value> = messages.iter().map(|m| serde_json::json!({"role":m.role,"content":[{"type":"input_text","text":m.content}]})).collect();
+    let input: Vec<serde_json::Value> = messages.iter().map(|m| serde_json::json!({"role":m.role,"content":m.content})).collect();
     let client = reqwest::Client::new();
     let response = client.post("https://api.openai.com/v1/responses")
         .bearer_auth(key).json(&serde_json::json!({"model":model,"input":input,"stream":true}))
@@ -63,12 +63,17 @@ async fn stream_chat(app: tauri::AppHandle, messages: Vec<ChatMessage>, model: S
         return Err(format!("OpenAI повернув {status}: {}", body.chars().take(400).collect::<String>()));
     }
     let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    // Keep raw bytes until a complete SSE event arrives, so split UTF-8
+    // codepoints never become replacement characters in Ukrainian output.
+    let mut buffer: Vec<u8> = Vec::new();
     while let Some(item) = stream.next().await {
         let bytes = item.map_err(|e| e.to_string())?;
-        buffer.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(end) = buffer.find("\n\n") {
-            let event = buffer.drain(..end + 2).collect::<String>();
+        buffer.extend_from_slice(&bytes);
+        while let Some((end, delimiter_len)) = buffer.windows(2).position(|w| w == b"\n\n")
+            .map(|p| (p, 2))
+            .or_else(|| buffer.windows(4).position(|w| w == b"\r\n\r\n").map(|p| (p, 4))) {
+            let event = String::from_utf8(buffer.drain(..end + delimiter_len).collect())
+                .map_err(|e| e.to_string())?;
             for line in event.lines().filter(|l| l.starts_with("data: ")) {
                 let data = &line[6..]; if data == "[DONE]" { continue; }
                 let value: serde_json::Value = match serde_json::from_str(data) { Ok(v) => v, Err(_) => continue };
@@ -124,11 +129,11 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
         let px = |n:f64| (n*scale).round() as i32;
         let w = px(pill_width.min(size.width as f64/scale));
         let h = size.height as i32;
-        let p = px(48.0);
+        let p = px(44.0);
         let left = ((size.width as i32-w)/2).max(0);
         let pill = CreateRoundRectRgn(left, 0, left+w, p, px(radius*2.0), px(radius*2.0));
         let region = if expanded {
-            let card = CreateRoundRectRgn(0, px(54.0), size.width as i32, h, px(radius*1.8), px(radius*1.8));
+            let card = CreateRoundRectRgn(px(10.0), px(52.0), size.width as i32 - px(10.0), h - px(8.0), px(radius*1.8), px(radius*1.8));
             let union = CreateRoundRectRgn(0,0,1,1,1,1);
             let _ = CombineRgn(union, pill, card, RGN_OR);
             let _ = DeleteObject(pill);

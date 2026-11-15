@@ -11,8 +11,8 @@
   },
   "app": {
     "windows": [{
-      "label": "main", "title": "Aurora Island", "width": 360, "height": 58,
-      "minWidth": 300, "minHeight": 52, "decorations": false, "transparent": true,
+      "label": "main", "title": "Aurora Island", "width": 296, "height": 52,
+      "minWidth": 256, "minHeight": 48, "decorations": false, "transparent": true,
       "alwaysOnTop": true, "skipTaskbar": true, "resizable": false, "shadow": false,
       "visible": true, "focus": false
     }],
