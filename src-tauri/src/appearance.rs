@@ -77,21 +77,12 @@ pub fn ensure_borderless(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Native full-window acrylic fills the entire rectangle of a transparent
-/// WebView2 window (including outside the capsule) and may restore native
-/// titlebar buttons. Keep the Windows compositor transparent instead; render
-/// the frosted lens only inside Aurora's rounded DOM surface.
+/// Theme changes are strictly CSS. Do not reconfigure DWM or Win32 styles
+/// while the capsule is animating; applying/removing native Acrylic was
+/// repainting the whole WebView and occasionally reviving a system caption.
 #[tauri::command]
 pub fn set_native_material(window: tauri::WebviewWindow, theme: String) -> Result<(), String> {
-    #[cfg(windows)] {
-        let _ = theme;
-        // Revert any acrylic left by earlier Aurora sessions or theme switches.
-        let _ = window_vibrancy::clear_acrylic(&window);
-        window.set_decorations(false).map_err(|e| e.to_string())?;
-        ensure_borderless(&window)
-    }
-    #[cfg(not(windows))] {
-        let _ = (window, theme);
-        Ok(())
-    }
+    let _ = theme;
+    #[cfg(windows)] { ensure_borderless(&window) }
+    #[cfg(not(windows))] { let _ = window; Ok(()) }
 }
