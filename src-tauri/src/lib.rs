@@ -1,6 +1,7 @@
 mod secure_key;
 mod audio;
 mod clipboard;
+mod screen;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -191,7 +192,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
+        .invoke_handler(tauri::generate_handler![screen::capture_screen, screen::save_capture_png, notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
         .setup(|app| {
             // A shortcut collision never prevents the island from starting.
             if let Err(err) = set_global_hotkey(app.handle().clone(), true) {
