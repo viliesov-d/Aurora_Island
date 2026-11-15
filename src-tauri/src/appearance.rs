@@ -3,13 +3,14 @@
 use serde::Serialize;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CursorPoint { pub x: f64, pub y: f64 }
+pub struct CursorPoint { pub x: f64, pub y: f64, pub left_pressed: bool }
 
 #[tauri::command]
 pub fn cursor_position(window: tauri::WebviewWindow) -> Result<Option<CursorPoint>, String> {
     #[cfg(windows)] {
         use windows_sys::Win32::Foundation::POINT;
         use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
         if !window.is_visible().map_err(|e| e.to_string())? {
             return Ok(None);
         }
@@ -23,6 +24,7 @@ pub fn cursor_position(window: tauri::WebviewWindow) -> Result<Option<CursorPoin
         Ok(Some(CursorPoint {
             x: (p.x - position.x) as f64 / scale,
             y: (p.y - position.y) as f64 / scale,
+            left_pressed: (unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } as u16 & 0x8000) != 0,
         }))
     }
     #[cfg(not(windows))] {
