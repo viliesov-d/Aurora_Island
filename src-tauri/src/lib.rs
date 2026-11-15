@@ -124,11 +124,11 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
         let px = |n:f64| (n*scale).round() as i32;
         let w = px(pill_width.min(size.width as f64/scale));
         let h = size.height as i32;
-        let p = px(60.0);
+        let p = px(48.0);
         let left = ((size.width as i32-w)/2).max(0);
         let pill = CreateRoundRectRgn(left, 0, left+w, p, px(radius*2.0), px(radius*2.0));
         let region = if expanded {
-            let card = CreateRoundRectRgn(0, px(66.0), size.width as i32, h, px(radius*1.8), px(radius*1.8));
+            let card = CreateRoundRectRgn(0, px(54.0), size.width as i32, h, px(radius*1.8), px(radius*1.8));
             let union = CreateRoundRectRgn(0,0,1,1,1,1);
             let _ = CombineRgn(union, pill, card, RGN_OR);
             let _ = DeleteObject(pill);
@@ -149,11 +149,11 @@ pub fn run() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
-                #[cfg(windows)] unsafe { apply_windows_backdrop(&window); }
+                let _ = window.set_decorations(false);
                 if let Ok(Some(monitor)) = window.primary_monitor() {
                     if let Ok(scale) = window.scale_factor() {
                         let msize = monitor.size(); let mpos = monitor.position();
-                        let x = mpos.x + ((msize.width as f64 - 540.0*scale)/2.0).round() as i32;
+                        let x = mpos.x + ((msize.width as f64 - 360.0*scale)/2.0).round() as i32;
                         let _ = window.set_position(tauri::PhysicalPosition::new(x.max(mpos.x), mpos.y+8));
                     }
                 }
@@ -176,12 +176,3 @@ pub fn run() {
         .expect("Aurora Island failed to start");
 }
 
-#[cfg(windows)]
-unsafe fn apply_windows_backdrop(window: &tauri::WebviewWindow) {
-    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
-    use windows_sys::Win32::Foundation::HWND;
-    if let Ok(hwnd) = window.hwnd() {
-        let backdrop: u32 = 3; // DWMSBT_TRANSIENTWINDOW: native acrylic-like blur on supported Windows 11 builds.
-        let _ = DwmSetWindowAttribute(hwnd.0 as HWND, DWMWA_SYSTEMBACKDROP_TYPE as u32, &backdrop as *const _ as *const _, std::mem::size_of_val(&backdrop) as u32);
-    }
-}
