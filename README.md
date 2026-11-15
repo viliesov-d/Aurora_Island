@@ -123,3 +123,13 @@ Completed in this milestone:
 Not implemented by this foundational milestone: Atoll's complete multi-page feature set (calendar/ICS, game FPS, notification mirroring, Discord call sidepill, character animations, downloads monitoring, voice, OCR/QR, integrated AI-provider sign-in, updater, launchers and program controls); these require individual Windows services and UI components, not copying WPF sources into React.
 
 **Windows QA:** installed NSIS artifact, compact↔expanded morph, Windows scaling (100/125/150/200%), clicking outside, editing chat input and settings text fields, cursor drag, swipe up and restore, global hotkey while hidden, wheel activity cycling with a timer + media simultaneously, near-screen edges, and tray behavior. UI build success alone does not prove runtime behavior.
+
+
+## Windows shell hotfix (user-reported screenshots, 2026-11-15)
+- Fixed a Windows 10/11 overlay bug where using native Acrylic on a transparent frameless WebView produced a **full rectangular translucent plate** outside the actual island; it could also cause native titlebar minimize/maximize/close buttons to reappear. We now turn off native whole-window Acrylic and explicitly strip non-client Win32 styles (at startup, after theme transitions, and after region updates).
+- The Liquid Glass appearance retains rounded, masked CSS glass with stronger contrast and highlights; **true backdrop refraction is a later separate render-pass feature**, not claimed in this hotfix.
+- Native window now expands *before* React begins the shell-morph animation; the delayed shrink waits for the spring to finish. The visible panel, Win32 hit region and typography no longer animate against mismatched viewport dimensions.
+- Improved themes, settings grid, text contrast over bright wallpapers, button spacing and accessibility for 125% and 150% DPI.
+- Opened as stacked PR from the Atoll mechanics branch; does not modify the default branch until Windows QA.
+
+**Manual QA:** verify no OS titlebar; no grey rectangle outside compact/expanded capsule with high contrast wallpaper; click-through; expanding/collapsing and dragging; all four themes; switching between styles; readability and text wrapping; Windows 10 and 11 at 100/125/150% scaling. Test native Windows behavior on the installed .exe; browser/TypeScript build alone is not enough.
