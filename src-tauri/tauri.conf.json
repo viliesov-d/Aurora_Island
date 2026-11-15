@@ -10,17 +10,44 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "label": "main", "title": "Aurora Island", "width": 296, "height": 52,
-      "minWidth": 256, "minHeight": 48, "decorations": false, "transparent": true,
-      "alwaysOnTop": true, "skipTaskbar": true, "resizable": false, "shadow": false,
-      "visible": true, "focus": false
-    }],
-    "security": { "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost https://api.openai.com;" }
+    "windows": [
+      {
+        "label": "main",
+        "title": "Aurora Island",
+        "width": 296,
+        "height": 52,
+        "minWidth": 256,
+        "minHeight": 48,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": true,
+        "focus": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost https://api.openai.com https://api.open-meteo.com https://geocoding-api.open-meteo.com;"
+    }
   },
   "bundle": {
-    "active": true, "targets": ["nsis"], "category": "Utility", "icon": ["icons/icon.png", "icons/icon.ico"],
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "category": "Utility",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "shortDescription": "Легкий Dynamic Island для Windows",
-    "windows": { "nsis": { "displayLanguageSelector": false, "installMode": "currentUser" } }
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installMode": "currentUser"
+      }
+    }
   }
 }
