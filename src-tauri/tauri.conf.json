@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aurora Island",
+  "version": "0.1.0",
+  "identifier": "com.auroraisland.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{
+      "label": "main", "title": "Aurora Island", "width": 540, "height": 70,
+      "minWidth": 260, "minHeight": 60, "decorations": false, "transparent": true,
+      "alwaysOnTop": true, "skipTaskbar": true, "resizable": false, "shadow": false,
+      "visible": true, "focus": false
+    }],
+    "security": { "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost https://api.openai.com;" }
+  },
+  "bundle": {
+    "active": true, "targets": ["nsis"], "category": "Utility", "icon": ["icons/icon.png", "icons/icon.ico"],
+    "shortDescription": "Легкий Dynamic Island для Windows",
+    "windows": { "nsis": { "displayLanguageSelector": false, "installMode": "currentUser" } }
+  }
+}
