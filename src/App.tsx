@@ -12,6 +12,7 @@ import { Toolbox } from "./Toolbox";
 import { CommandPalette } from "./CommandPalette";
 import { useMagneticPill } from "./useMagneticPill";
 import { useOutsideCollapse } from "./useOutsideCollapse";
+import { useNativeAudioEvents } from "./useNativeAudioEvents";
 import { CompactActivity, useLiveActivity, activityIcons, type Activity } from "./LiveActivity";
 import { useClipboardWatcher, useReminderNotifications, showWindowsNotification } from "./nativeIntegration";
 
@@ -54,6 +55,9 @@ export default function App() {
   const [mediaBusy,setMediaBusy]=useState(false);
   const volumeTimer=useRef<number|undefined>(undefined);
   const lastVolumeInteraction=useRef(0);
+  useNativeAudioEvents({ enabled:prefs.systemHud, volumeEnabled:prefs.modules.volume,
+    mediaEnabled:prefs.modules.media, expanded, hidden, media,
+    lastManualInteraction:lastVolumeInteraction, onToast:setToast });
   const leaveTimer=useRef<number|undefined>(undefined);
   const hoverTimer=useRef<number|undefined>(undefined);
   const skipHover=useRef(false);
@@ -424,6 +428,7 @@ export default function App() {
               <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
               <Toggle label="Заблокувати положення острова" checked={prefs.lockPosition} onChange={v=>updatePrefs({lockPosition:v})}/>
               <Toggle label="Розумне відкриття активності" checked={prefs.smartOpen} onChange={v=>updatePrefs({smartOpen:v})}/>
+              <Toggle label="Системний HUD: гучність і нова музика" checked={prefs.systemHud} onChange={v=>updatePrefs({systemHud:v})}/>
               <Toggle label="Глобальна клавіша Ctrl+Alt+Space" checked={prefs.globalHotkey} onChange={v=>updatePrefs({globalHotkey:v})}/>
               <Toggle label="Автоматична історія буфера обміну" checked={prefs.clipboardWatch} onChange={v=>updatePrefs({clipboardWatch:v})}/>
               <p className="tool-help">Автозбереження буфера вимкнено за замовчуванням. При ввімкненні нові записи відстежуються у Windows та зберігаються тільки в сесії, без запису на диск. У буфер можуть потрапити паролі й особисті дані.</p>
