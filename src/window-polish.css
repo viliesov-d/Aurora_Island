@@ -1,0 +1,139 @@
+/* Aurora Windows transparency and motion stability patch.
+   Keep the DOM shadow and lens strictly inside the vector shell.
+   Acrylic was disabled at Win32 level because it painted the entire WebView rectangle. */
+html, body, #root, .app {
+  background:transparent!important;
+  box-shadow:none!important;
+  border:0;
+}
+.app{isolation:isolate}
+.island{isolation:isolate}
+.island .island-morph{
+  contain:layout paint style;
+  background-clip:padding-box;
+  -webkit-backface-visibility:hidden;
+  backface-visibility:hidden;
+  transform:translateZ(0);
+  border-style:solid;
+  will-change:width,height,border-radius;
+}
+.island .island-morph::before,
+.island .island-morph::after {border-radius:inherit}
+.app.is-open .island .island-morph {backface-visibility:hidden}
+.app:not(.is-open):not(.is-hidden) .island .pill {opacity:1}
+.app.is-open .island .pill {
+  transition:opacity 200ms cubic-bezier(.22,1,.36,1);
+}
+.app.is-open .island .panel {
+  isolation:isolate;
+  transform:none;
+  /* The shell alone supplies the plate background and glass effect. */
+}
+.island .panel::before,.island .panel::after{
+  pointer-events:none;
+  max-width:100%;
+}
+/* The previous 0.1-alpha cards and text were washed out over a bright desktop. */
+.island.theme-glass{
+  --surface-text:#f8fbff;
+  --surface-muted:#d9e3f3;
+  --surface-hairline:rgba(242,248,255,.30);
+  --pill-surface:linear-gradient(136deg,rgba(86,117,151,.77),rgba(23,36,54,.76) 51%,rgba(15,24,41,.79));
+  --panel-surface:linear-gradient(145deg,rgba(77,106,138,.85),rgba(29,42,62,.88) 52%,rgba(14,22,39,.91));
+  --card-fill:rgba(16,26,44,.43);
+  --interactive-fill:rgba(226,240,255,.14);
+}
+.island.theme-glass .island-morph{
+  -webkit-backdrop-filter:blur(max(16px,calc(var(--glass-blur) * 1.2))) saturate(1.6);
+  backdrop-filter:blur(max(16px,calc(var(--glass-blur) * 1.2))) saturate(1.6);
+  /* Expensive stacked shadows are reduced while width and height animate. */
+  box-shadow:0 16px 45px #0006,inset 0 1px #ffffff6b;
+}
+.app.is-open .island.theme-glass .island-morph{
+  -webkit-backdrop-filter:blur(max(18px,calc(var(--glass-blur) * 1.3))) saturate(1.5);
+  backdrop-filter:blur(max(18px,calc(var(--glass-blur) * 1.3))) saturate(1.5);
+}
+.island.theme-glass .panel::before{opacity:.35}
+.island.theme-glass .panel::after{box-shadow:inset 0 1px 0 #ffffff2d}
+.island.theme-glass .settings-section,
+.island.theme-glass .mini-card,
+.island.theme-glass .tool-item,
+.island.theme-glass .volume-card {
+  background:rgba(19,30,50,.44);
+  border-color:rgba(237,247,255,.23);
+}
+.island.theme-glass .settings-section{
+  box-shadow:inset 0 1px 0 #ffffff10;
+}
+.island .settings-view{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+  align-items:start;
+  min-width:0;
+}
+.island .settings-section{
+  min-width:0;
+  overflow:visible;
+  padding:16px;
+}
+.island .theme-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+}
+.island .theme-option{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  min-height:56px;
+  padding:8px 9px;
+  line-height:1.25;
+  overflow:hidden;
+}
+.island .theme-option > span:last-child{
+  display:block;
+  min-width:0;
+  color:var(--surface-text);
+  font-size:12px;
+  line-height:1.22;
+  overflow-wrap:break-word;
+}
+.island .theme-preview{width:35px;height:27px;flex:0 0 35px}
+.island.theme-glass .settings-view .theme-option,
+.island.theme-glass .settings-view .slider-row{
+  color:var(--surface-text);
+}
+.island .settings-view .slider-row>span,
+.island .settings-view .toggle-row,
+.island .settings-view .color-row {line-height:1.45}
+.island .panel-head {flex:none;min-height:61px}
+.island .panel-head h1{line-height:1.27}
+.island .head-actions{flex-shrink:0}
+.island .tabs{flex:none;scrollbar-width:none}
+.island .tabs::-webkit-scrollbar{display:none}
+.island .tabs button{transition:color .18s ease,background .22s ease,transform .27s cubic-bezier(.2,1,.35,1)}
+.island .tabs button:active{transform:scale(.96)}
+.island .panel-body{min-height:0;overscroll-behavior:contain}
+.island .panel-footer{flex:none;min-height:28px}
+.island .pill-brand,.island .pill-status{min-width:0}
+.island .brand-name,.island .live-meta b,.island .live-meta span{
+  text-overflow:ellipsis;
+}
+.island .pill{box-sizing:border-box}
+.island .pill::after{opacity:.25}
+.island .magnetic-svg{filter:none!important}
+/* Readable text while transforming: no scaleY on the content layer. */
+.island .panel-body,.island .panel-head,.island .tabs,.island .panel-footer {
+  backface-visibility:hidden;
+}
+.island.theme-soft .settings-view .theme-option > span:last-child{color:#263344}
+@media(max-width:540px) {
+ .island .settings-view{grid-template-columns:1fr}
+ .island .settings-section{padding:15px}
+ .island .theme-option{min-height:49px}
+}
+@media(prefers-reduced-motion:reduce) {
+ .island .island-morph,.island .pill,.island .panel,.island .panel-body{
+  animation:none!important;transition:none!important;will-change:auto!important;
+ }
+}
