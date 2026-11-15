@@ -43,7 +43,6 @@ export default function App() {
   });
   const [hidden,setHidden]=useState(()=>{try{return localStorage.getItem("aurora:hidden")==="true"}catch{return false}});
   const hiddenLatest=useRef(hidden); hiddenLatest.current=hidden;
-  const wasHidden=useRef(hidden);
   const [toast,setToast]=useState<string|null>(null);
   useClipboardWatcher(prefs.clipboardWatch);
   useReminderNotifications(prefs.notifications);
@@ -60,13 +59,10 @@ export default function App() {
     lastManualInteraction:lastVolumeInteraction, onToast:setToast });
   const leaveTimer=useRef<number|undefined>(undefined);
   const hoverTimer=useRef<number|undefined>(undefined);
-  const skipHover=useRef(false);
   const layoutQueue=useRef<Promise<void>>(Promise.resolve());
   const collapseResizeTimer=useRef<number|undefined>(undefined);
-  const initializedLayout=useRef(false);
   const openingWindow=useRef(false);
   const transitionToken=useRef(0);
-  const restoredPosition=useRef(false);
   const chatEnd=useRef<HTMLDivElement>(null);
   const dragAnchor=useRef<{x:number;y:number;at:number}|null>(null);
   const suppressClick=useRef(false);
@@ -179,6 +175,7 @@ export default function App() {
   useEffect(()=>{
     window.clearTimeout(collapseResizeTimer.current);
     if(!initializedNative.current)return;
+    if(openingWindow.current&&!expanded&&!hidden)return;
     const wasOpen=previousExpanded.current;
     previousExpanded.current=expanded;
     if(hidden){
@@ -233,7 +230,6 @@ export default function App() {
       if(!active)return;
       window.clearTimeout(hoverTimer.current);
       window.clearTimeout(leaveTimer.current);
-      skipHover.current=true;
       setHidden(false);
       setTab("commands");
       invokeMode(true);
@@ -319,21 +315,13 @@ export default function App() {
     listen<string>("chat:delta",e=>setMessages(m=>{if(!m.length||m[m.length-1].role!=="assistant")return [...m,{role:"assistant",content:e.payload}];return [...m.slice(0,-1),{...m[m.length-1],content:m[m.length-1].content+e.payload}]})).then(f=>unlisten=f);
     return()=>unlisten?.();
   },[]);
+  const invokeModeRef=useRef(invokeMode);invokeModeRef.current=invokeMode;
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{
-    if(e.key==="Escape"&&expanded){e.preventDefault();setExpanded(false)}
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setHidden(false);setTab("commands");invokeMode(true)}
+    if(e.key==="Escape"&&expanded){e.preventDefault();invokeModeRef.current(false)}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){
+      e.preventDefault();setTab("commands");invokeModeRef.current(true);
+    }
   };window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[expanded]);
-  const scheduleExpand=()=>{
-    window.clearTimeout(leaveTimer.current);
-    if(hidden||expanded||!prefs.hoverExpand||skipHover.current)return;
-    window.clearTimeout(hoverTimer.current);
-    hoverTimer.current=window.setTimeout(()=>{if(!skipHover.current)invokeMode(true)},120);
-  };
-  const scheduleCollapse=()=>{
-    window.clearTimeout(hoverTimer.current);
-    skipHover.current=false;
-    // Native desktop watcher handles close from outside without losing text focus.
-  };
   const sendMessage=async()=>{const text=draft.trim();if(!text||busy)return;setError("");setDraft("");const next=[...messages,{role:"user" as const,content:text}];setMessages([...next,{role:"assistant",content:""}]);setBusy(true);
     try { await invoke("stream_chat",{messages:next,model:"gpt-4.1-mini"}); }
     catch(e){setError(String(e));setMessages(m=>m.filter((x,i)=>!(x.role==="assistant"&&i===m.length-1&&x.content==="")));}
@@ -355,7 +343,6 @@ export default function App() {
     }else if(Math.hypot(dx,dy)>=7){
       dragAnchor.current=null;suppressClick.current=true;
       window.clearTimeout(hoverTimer.current);
-      skipHover.current=true;
       void getCurrentWindow().startDragging().catch(err=>setError(String(err)));
     }
   };
@@ -366,19 +353,19 @@ export default function App() {
     if(prefs.modules.timer&&timerOn) list.push({
       id:"timer",title:"Таймер",detail:fmt(seconds),
       icon:activityIcons.timer,progress:Math.max(0,Math.min(1,seconds/Math.max(60,timerInitial.current))),
-      onOpen:()=>{setTab("home");setExpanded(true);}
+      onOpen:()=>{setTab("home");invokeMode(true);}
     });
     if(prefs.modules.media&&media?.available&&media.playing) list.push({
       id:"music",title:media.title?.slice(0,34)||"Відтворення",
       detail:media.artist?.slice(0,32)||"Музика Windows",
       icon:activityIcons.music,
       progress:media.durationSeconds>0?media.positionSeconds/media.durationSeconds:undefined,
-      onOpen:()=>{setTab("media");setExpanded(true);}
+      onOpen:()=>{setTab("media");invokeMode(true);}
     });
     if(prefs.modules.battery&&battery?.charging&&battery.batteryPercent!=null) list.push({
       id:"battery",title:"Заряджання",detail:`${battery.batteryPercent}%`,
       icon:activityIcons.battery,progress:battery.batteryPercent/100,
-      onOpen:()=>{setTab("home");setExpanded(true);}
+      onOpen:()=>{setTab("home");invokeMode(true);}
     });
     return list;
   },[prefs.modules.timer,prefs.modules.media,prefs.modules.battery,timerOn,seconds,media,battery]);
@@ -391,11 +378,11 @@ export default function App() {
     invokeMode(!expanded);
   };
 
-  return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`}>
+  return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`} style={{"--morph-duration":`${morphMs}ms`} as CSSProperties}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
-      <motion.div layout="size" className="island-morph" transition={{type:"spring",stiffness:255,damping:27,mass:1}} aria-hidden="true" />
-      {hidden?<button className="island-restore" onPointerEnter={restoreFromHandle} onClick={restoreFromHandle} aria-label="Повернути Aurora Island" title="Повернути Aurora Island"><span/></button>:<>
-      <div ref={pillRef} className="pill" onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}
+      <div className="island-morph" aria-hidden="true" />
+      {hidden?<button className="island-restore" onClick={restoreFromHandle} aria-label="Повернути Aurora Island" title="Повернути Aurora Island"><span/></button>:<>
+      <div ref={pillRef} className="pill"
         onPointerDown={e=>{if(e.target===e.currentTarget)beginDrag(e)}} onPointerMove={moveDrag}
         onPointerUp={endDrag} onPointerCancel={endDrag}
         onClick={e=>{if(e.target===e.currentTarget&&!suppressClick.current)smartToggle();suppressClick.current=false;}}
@@ -415,7 +402,7 @@ export default function App() {
           <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={smartToggle}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
         </div>
       </div>
-      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" onPointerLeave={scheduleCollapse} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{duration:.32,ease:[.22,1,.36,1]}}>
+      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{duration:morphMs/1200,ease:[.22,1,.36,1]}}>
         <header className="panel-head" onPointerDown={e=>{if(!(e.target as HTMLElement).closest("button, input, textarea, a"))beginDrag(e)}} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Сховати до смужки" onClick={hideToHandle}><ChevronUp size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
         <nav className="tabs"><button className={tab==="home"?"active":""} onClick={()=>setTab("home")}><Command size={15}/> Огляд</button>{(prefs.modules.media||prefs.modules.volume)&&<button className={tab==="media"?"active":""} onClick={()=>setTab("media")}><Music2 size={15}/> Музика</button>}<button className={tab==="chat"?"active":""} onClick={()=>setTab("chat")}><MessageCircle size={15}/> AI чат</button><button className={tab==="tools"?"active":""} onClick={()=>setTab("tools")}><Command size={15}/> Інструменти</button><button className={tab==="commands"?"active":""} onClick={()=>setTab("commands")}><Command size={15}/> Пошук</button><button className={tab==="settings"?"active":""} onClick={()=>setTab("settings")}><Settings2 size={15}/> Налаштування</button></nav>
         <div className="panel-body">
@@ -435,7 +422,7 @@ export default function App() {
           {tab==="chat"&&<div className="chat-view"><div className="chat-topline"><span><ShieldCheck size={14}/> API-ключ захищений DPAPI</span><label className="attach-btn">Прикріпити файл<input type="file" accept=".txt,.md,.json,.csv,.log,.yaml,.yml,.xml" onChange={e=>attachText(e.target.files?.[0])}/></label></div><div className="messages">{messages.map((m,i)=><div className={`message ${m.role}`} key={i}><div className="avatar">{m.role==="assistant"?<Sparkles size={14}/>:"Я"}</div><div className="bubble">{m.role==="assistant"?<Suspense fallback={m.content}><ReactMarkdown>{m.content|| (busy&&i===messages.length-1?"Думаю…":"")}</ReactMarkdown></Suspense>:m.content}</div></div>)}<div ref={chatEnd}/></div>{error&&<div className="error-msg">{error}</div>}<form className="composer" onSubmit={e=>{e.preventDefault();void sendMessage()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void sendMessage()}}} placeholder="Напишіть повідомлення…"/><button type="submit" disabled={busy||!draft.trim()} aria-label="Надіслати"><Send size={16}/></button></form><div className="chat-foot">Відповіді надходять через офіційний OpenAI API · модель GPT-4.1 mini</div></div>}
           {tab==="settings"&&<div className="settings-view"><div className="settings-section"><div className="section-title">ОФОРМЛЕННЯ</div><div className="theme-grid">{(Object.keys(themeNames) as Theme[]).map(t=><button key={t} className={`theme-option ${prefs.theme===t?"selected":""}`} onClick={()=>updatePrefs({theme:t})}><span className={`theme-preview preview-${t}`}><i/></span><span>{themeNames[t]}</span></button>)}</div><Slider label="Ширина острова" value={prefs.width} min={240} max={340} suffix=" px" onChange={v=>updatePrefs({width:v})}/><Slider label="Заокруглення" value={prefs.radius} min={18} max={38} suffix=" px" onChange={v=>updatePrefs({radius:v})}/><Slider label="Прозорість" value={prefs.opacity} min={35} max={100} suffix="%" onChange={v=>updatePrefs({opacity:v})}/><label className="color-row">Акцентний колір<input type="color" value={prefs.accent} onChange={e=>updatePrefs({accent:e.target.value})}/></label>{prefs.theme==="glass"&&<><Slider label="Розмиття фону" value={prefs.blur} min={0} max={30} suffix=" px" onChange={v=>updatePrefs({blur:v})}/><Slider label="Інтенсивність скла" value={prefs.glass} min={10} max={100} suffix="%" onChange={v=>updatePrefs({glass:v})}/></>}<Slider label="Швидкість анімації" value={prefs.speed} min={35} max={140} suffix="%" onChange={v=>updatePrefs({speed:v})}/></div>
             <div className="settings-section"><div className="section-title">МОДУЛІ</div><Toggle label="Годинник" checked={prefs.modules.clock} onChange={v=>updatePrefs({modules:{...prefs.modules,clock:v}})}/><Toggle label="Батарея (Windows API)" checked={prefs.modules.battery} onChange={v=>updatePrefs({modules:{...prefs.modules,battery:v}})}/><Toggle label="Таймер" checked={prefs.modules.timer} onChange={v=>updatePrefs({modules:{...prefs.modules,timer:v}})}/><Toggle label="Керування музикою (SMTC)" checked={prefs.modules.media} onChange={v=>updatePrefs({modules:{...prefs.modules,media:v}})}/><Toggle label="Системна гучність" checked={prefs.modules.volume} onChange={v=>updatePrefs({modules:{...prefs.modules,volume:v}})}/></div>
-            <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
+            <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
               <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
               <Toggle label="Заблокувати положення острова" checked={prefs.lockPosition} onChange={v=>updatePrefs({lockPosition:v})}/>
               <Toggle label="Розумне відкриття активності" checked={prefs.smartOpen} onChange={v=>updatePrefs({smartOpen:v})}/>
