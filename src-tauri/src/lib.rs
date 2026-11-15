@@ -151,8 +151,8 @@ fn set_native_region(
             // Unlike the previous disjoint pill + card regions, it cannot clip
             // the animated bridge between compact and expanded states.
             CreateRoundRectRgn(
-                px(7.0), px(3.0), width - px(7.0), height - px(7.0),
-                px(66.0), px(66.0),
+                px(12.0), px(7.0), width - px(12.0), height - px(15.0),
+                px(58.0), px(58.0),
             )
         } else {
             let w = px(pill_width.min(size.width as f64 / scale));
@@ -160,9 +160,9 @@ fn set_native_region(
             // The elastic outline may reach up to 17 DIP beyond the shell;
             // leave a 23 DIP overscan so the visible deformation is not clipped.
             CreateRoundRectRgn(
-                (left - px(23.0)).max(0), 0,
-                (left + w + px(23.0)).min(width), px(80.0),
-                px((radius + 23.0) * 2.0), px((radius + 23.0) * 2.0),
+                (left - px(20.0)).max(0), 0,
+                (left + w + px(20.0)).min(width), px(68.0),
+                px((radius + 18.0) * 2.0), px((radius + 18.0) * 2.0),
             )
         };
         if region.is_null() {
@@ -215,6 +215,7 @@ fn set_global_hotkey(app: tauri::AppHandle, enabled: bool) -> Result<(), String>
                 if event.state() == ShortcutState::Pressed {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
+                        #[cfg(windows)] let _ = appearance::ensure_borderless(&window);
                         let _ = window.set_focus();
                     }
                     let _ = app.emit("aurora:open-commands", ());
@@ -251,14 +252,29 @@ pub fn run() {
                     }
                 }
                 let handle = app.handle().clone();
-                window.on_window_event(move |event| { if let WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); if let Some(w) = handle.get_webview_window("main") { let _ = w.hide(); } } });
+                window.on_window_event(move |event| {
+                    match event {
+                        WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            if let Some(w) = handle.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
+                        },
+                        WindowEvent::Focused(true) => {
+                            if let Some(w) = handle.get_webview_window("main") {
+                                #[cfg(windows)] let _ = appearance::ensure_borderless(&w);
+                            }
+                        },
+                        _ => {}
+                    }
+                });
             }
             let show = MenuItem::with_id(app, "show", "Відкрити Aurora Island", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Вийти", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
             let tray_icon = app.default_window_icon().cloned();
             let mut tray = TrayIconBuilder::new().menu(&menu).on_menu_event(|app,event| match event.id.as_ref() {
-                "show" => if let Some(w)=app.get_webview_window("main") { let _=w.show(); let _=w.set_focus(); },
+                "show" => if let Some(w)=app.get_webview_window("main") { let _=w.show(); #[cfg(windows)] let _=appearance::ensure_borderless(&w); let _=w.set_focus(); },
                 "quit" => app.exit(0), _ => {}
             });
             if let Some(icon) = tray_icon { tray = tray.icon(icon); }
