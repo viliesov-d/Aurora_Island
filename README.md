@@ -105,3 +105,21 @@ This redesign keeps the existing native player, ChatGPT/API chat, clipboard, not
 - **Readable expanded layout:** 568 logical px native window, up to 710 logical px high, limited by current monitor; 14 px content text, larger chat, cards, toolbar, settings and navigation. Delayed native window collapse allows the exit spring animation to finish before shrinking the hit region. Monitor size and DPI scaling are taken into account.
 
 **Manual Windows QA before merging:** install the PR's NSIS artifact, test edges at 100/125/150/200% DPI, monitor boundaries, dragging, clickable controls in all themes, native Acrylic on Windows 10/11, animation smoothness, mouse attraction from outside the capsule, auto-hide, hotkey and tray. Check that the island does not block unrelated desktop clicks or leave an invisible region after collapse.
+
+
+## Mechanic-parity milestone: Atoll reference (Fuwni)
+
+This milestone ports core interaction **behavior** from [Atoll / dynamic-island-windows](https://github.com/Fuwni/dynamic-island-windows) to Aurora's Tauri 2/Rust/React architecture, with implementation specific to Aurora. Atoll is MIT licensed (Copyright (c) 2026 mykolaichechelnytskyi); see the [Atoll LICENSE](https://github.com/Fuwni/dynamic-island-windows/blob/main/LICENSE).
+
+Completed in this milestone:
+- **Single continuous spring-morph plate** behind compact and expanded content instead of the two separately floating surfaces. The native Windows hit-test region is one rounded rectangle when expanded so it no longer clips the visual bridge between the pill and full panel.
+- **Compact live activity arbitration:** timer, media, charging, and a short timer-finished notice; while multiple activities are available, the mouse wheel over the pill cycles between them.
+- **Safer pointer behavior:** do not treat a click on a button as a drag; begin native drag from the dedicated handle/background only after a >7 logical-pixel movement threshold; upward flick gesture on the handle can hide the pill.
+- **Swipe-hide + restore strip:** small clickable (and hoverable) strip remains; original window position is saved separately and restored on return. Global hotkey can reopen the island as well. Position lock setting prevents accidental movement.
+- **Atoll-style hover lifecycle:** 120ms to expand, about 420ms after leaving to fold, immediate close on an outside mouse press, but **never auto-fold during text input**. Close on Esc.
+- **No global mouse hooks:** while expanded, the native cursor sampling command reports button state to the frontend, avoiding permissions and invasive monitoring. While compact, native spring hover remains optional.
+- **Privacy:** no new data sent to Atoll, Microsoft, or any external service. Existing clipboard watching stays opt-in.
+
+Not implemented by this foundational milestone: Atoll's complete multi-page feature set (calendar/ICS, game FPS, notification mirroring, Discord call sidepill, character animations, downloads monitoring, voice, OCR/QR, integrated AI-provider sign-in, updater, launchers and program controls); these require individual Windows services and UI components, not copying WPF sources into React.
+
+**Windows QA:** installed NSIS artifact, compact↔expanded morph, Windows scaling (100/125/150/200%), clicking outside, editing chat input and settings text fields, cursor drag, swipe up and restore, global hotkey while hidden, wheel activity cycling with a timer + media simultaneously, near-screen edges, and tray behavior. UI build success alone does not prove runtime behavior.
