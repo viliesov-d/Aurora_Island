@@ -171,3 +171,15 @@ Verification: `npm test` (Node 22.18+), `npm run build`, and Windows installer C
 Manual acceptance on Windows 10/11: rapid double click/open/Escape, drag while open, text input plus outside click, tray/hotkey restore, all themes, reduced motion, 100/125/150/200% DPI, a secondary monitor left of the primary, and fullscreen video on each monitor. Compilation alone does not certify animation smoothness or system-window focus behavior.
 
 This adapts the core island shell behavior. Atoll's OCR/QR, lyrics, Discord side-pill, characters, FPS, calendar/ICS and update service are separate features and are not claimed as implemented here.
+
+## Liquid Glass v3
+
+The Liquid Glass theme now uses a WebGL lens adapted from [dashersw/liquid-glass-js](https://github.com/dashersw/liquid-glass-js), with rounded-distance refraction, a narrow spectral edge, cursor-lit highlights and neutral transparent controls. Text is rendered separately so it stays sharp. The fixed WebView, click-only opening and other themes are preserved.
+
+**Live desktop refraction:** Windows 10 version 2004+ / Windows 11. Only the current Aurora window bounds are sampled, reduced to at most 384 pixels wide, around 4.5 frames/s when expanded and 2.2 frames/s when compact. Samples stay in memory, are transferred as binary BMP textures, and are never written to disk or sent over the network. Sampling stops for other themes, hidden/fullscreen-suppressed island, reduced-transparency preference, and after a capture error. Hidden WebViews skip sampling.
+
+To avoid capturing itself recursively, live mode uses Windows `WDA_EXCLUDEFROMCAPTURE`: **Aurora is omitted from screenshots/screen sharing while live mode is active.** Disable “Живе заломлення робочого столу” in Glass settings to restore normal screenshot visibility and use a transparent lens without desktop sampling. Capture/WebGL failures fall back without hiding or resizing the island. Protected/DRM windows may not be available as a texture.
+
+No new npm/Cargo dependency was added. Upstream MIT license and source commit are recorded in `THIRD_PARTY_NOTICES.md`. Refraction is an adaptation of the reference optics, not its DOM/html2canvas snapshot mechanism.
+
+Validation: `npm test`, `npm run build`, Windows installer CI, and browser visual checks using an explicit synthetic desktop texture. Native desktop capture and mixed-DPI rendering still require a real Windows smoke test.
