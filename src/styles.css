@@ -133,3 +133,12 @@
 .native-test{margin:8px 0 10px;padding:9px 12px;border-radius:10px;background:#ffffff12;border:1px solid #ffffff18;color:#efedff;font-size:12px}
 .native-test:hover{background:#ffffff22}
 .settings-view .tool-help{padding:7px 3px 12px;line-height:1.5}
+
+/* Screenshot preview and region selection */
+.screen-preview{position:relative;max-width:100%;overflow:hidden;border-radius:12px;border:1px solid #ffffff23;background:#0d0c14;line-height:0;touch-action:none}
+.screen-preview img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;cursor:crosshair;touch-action:none}
+.screen-selection{position:absolute;pointer-events:none;border:1px solid #d7d2ff;outline:1px solid #4a48b6;background:#afa9ff22;box-shadow:0 0 0 1px #08081588}
+.screen-color{width:23px;height:23px;display:inline-block;flex:none;border-radius:7px;border:1px solid #ffffff55}
+.screen-hex{display:inline-flex;gap:6px;align-items:center;flex:1;min-width:120px;font:600 11px ui-monospace,Consolas,monospace}
+.screen-tools .tool-inline button{flex-shrink:0}
+.screen-tools .tool-notice{overflow-wrap:anywhere}
