@@ -26,7 +26,7 @@ export function Reminders() {
   };
   return <div className="tool-section">
     <div className="tool-heading"><Bell size={16}/> Нагадування</div>
-    <p className="tool-help">Нагадування показуються в острові, поки застосунок працює. Це не системна служба Windows.</p>
+    <p className="tool-help">Нагадування зберігаються локально. Якщо ввімкнути сповіщення в налаштуваннях, Windows показуватиме їх, поки Aurora запущена. Після закриття застосунку фонові нагадування не працюють.</p>
     {due.map(x=><div className="tool-item reminder-due" role="alert" key={x.id}><Bell size={16}/><span>Час нагадування: {x.title}</span><button onClick={()=>setItems(v=>v.map(y=>y.id===x.id?{...y,done:true}:y))}><CheckCircle2 size={15}/> Готово</button></div>)}
     <input className="tool-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Про що нагадати?"/>
     <div className="tool-inline"><input type="datetime-local" value={at} onChange={e=>setAt(e.target.value)}/><button onClick={create}>Додати</button></div>
