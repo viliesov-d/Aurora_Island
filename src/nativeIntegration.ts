@@ -3,24 +3,16 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type ClipboardRecord = { id: number; text: string; pinned: boolean };
 export type ClipboardSnapshot = { sequence: number; text: string | null };
-export const LIVE_CLIPS_KEY = "aurora:clipboard-live";
 export const LIVE_CLIPS_EVENT = "aurora:clipboard-updated";
+let liveClips: ClipboardRecord[] = [];
 
 export function getLiveClips(): ClipboardRecord[] {
-  try {
-    const parsed: unknown = JSON.parse(sessionStorage.getItem(LIVE_CLIPS_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter(
-      (c): c is ClipboardRecord => c && typeof c === "object" &&
-        typeof c.id === "number" && typeof c.text === "string"
-    ).slice(0, 25) : [];
-  } catch { return []; }
+  return liveClips.slice();
 }
 
 function saveLiveClips(clips: ClipboardRecord[]) {
-  try {
-    sessionStorage.setItem(LIVE_CLIPS_KEY, JSON.stringify(clips.slice(0, 25)));
-    window.dispatchEvent(new Event(LIVE_CLIPS_EVENT));
-  } catch { /* Do not block users when storage is disabled/full. */ }
+  liveClips = clips.slice(0, 25);
+  window.dispatchEvent(new Event(LIVE_CLIPS_EVENT));
 }
 
 export function removeLiveClip(id: number) {
