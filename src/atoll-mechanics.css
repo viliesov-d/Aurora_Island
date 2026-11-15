@@ -97,3 +97,22 @@
   .island .island-morph{transition:none!important;will-change:auto}
   .island .live-toast{animation:none}
 }
+
+/* The reactive perimeter is a full rounded silhouette, not a separate bead.
+   SVG has a 22px overscan so the pull never clips at its own bounds. */
+.island .magnetic-svg{
+  position:absolute!important;left:-22px;top:-22px;
+  width:calc(100% + 44px);height:calc(100% + 44px);
+  z-index:1;pointer-events:none;overflow:visible;opacity:0;
+  filter:drop-shadow(0 4px 8px color-mix(in srgb,var(--accent),transparent 84%));
+}
+.island .magnetic-shape{
+  fill:var(--magnetic-fill);
+  stroke:var(--surface-hairline);
+  stroke-width:.9px;
+  vector-effect:non-scaling-stroke;
+}
+.island.theme-glass .magnetic-shape{stroke:#f2f8ff88;stroke-width:1.1px}
+.island.theme-soft .magnetic-shape{stroke:#bdcbd5}
+.island.theme-neon .magnetic-shape{stroke:#ce8effa0}
+@media(prefers-reduced-motion:reduce){.island .magnetic-svg{display:none}}
