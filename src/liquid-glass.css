@@ -1,0 +1,87 @@
+/* Liquid Glass v3: neutral optical glass, not a blue acrylic sheet.
+   Actual desktop refraction is rendered by the WebGL lens behind the content. */
+.island.theme-glass{
+  --panel-radius:32px;--tile-radius:20px;
+  --surface-text:#fff;--surface-muted:#e1e5eb;
+  --surface-hairline:#ffffff40;
+  --card-fill:linear-gradient(150deg,#ffffff1f,#ffffff08);
+  --interactive-fill:#ffffff22;
+  --magnetic-fill:#e5efff26;
+  --pill-surface:transparent;--panel-surface:transparent;
+  color:var(--surface-text);
+}
+.island.theme-glass .liquid-glass-canvas{
+  position:absolute;inset:0;width:100%;height:100%;display:block;
+  pointer-events:none;z-index:0;
+}
+.island.theme-glass .morph-compact,.island.theme-glass .morph-full{
+  background:transparent;opacity:0!important;
+}
+.island.theme-glass .island-morph{
+  background:linear-gradient(150deg,#ffffff19,#ffffff06 48%,#0d101b19)!important;
+}
+.island.theme-glass .morph-rim{
+  z-index:1;opacity:1;
+  background:linear-gradient(135deg,#ffffff24,transparent 27%,transparent 65%,#ffffff12);
+  box-shadow:inset 0 1px 1px #ffffffe0,inset 1px 0 1px #ffffff70,
+    inset 0 -1px 1px #ffffff60,inset -1px 0 1px #ffffff20!important;
+}
+.island.theme-glass .pill{
+  border-color:#ffffff70!important;text-shadow:0 1px 5px #0007;
+}
+.island.theme-glass .pill::before,.island.theme-glass .pill::after{content:none}
+.island.theme-glass .panel{color:#fff;text-shadow:0 1px 3px #0005}
+.island.theme-glass .panel-head,.island.theme-glass .panel-footer{border-color:#ffffff27}
+.island.theme-glass .panel-head h1{font-weight:650;letter-spacing:-.7px}
+.island.theme-glass .eyebrow{color:#ffffffb5;letter-spacing:1.7px}
+.island.theme-glass :is(.mini-card,.settings-section,.volume-card,.media-player,.welcome-card,.tool-command-action){
+  background:var(--card-fill);border:1px solid #ffffff2d;
+  border-radius:var(--tile-radius);box-shadow:inset 0 1px 0 #ffffff38;
+  backdrop-filter:blur(8px) saturate(1.15);-webkit-backdrop-filter:blur(8px) saturate(1.15);
+}
+.island.theme-glass .welcome-card{
+  background:radial-gradient(ellipse at 0 0,#ffffff2b,transparent 68%),linear-gradient(140deg,#ffffff12,#ffffff04);
+}
+.island.theme-glass .welcome-card::after{display:none}
+.island.theme-glass :is(.tabs button,.theme-option,.icon-btn,.quick-row button,.tool-tabs button,.small-action,.media-controls button,.native-test){
+  border:1px solid transparent;background:#ffffff0c;color:#f6f8fc;
+  text-shadow:0 1px 3px #0005;box-shadow:inset 0 1px #ffffff16;
+}
+.island.theme-glass :is(.tabs button.active,.theme-option.selected,.tool-tabs button.active){
+  background:linear-gradient(150deg,#ffffff40,#ffffff1a);border-color:#ffffff55;
+  box-shadow:inset 0 1px #ffffff80;color:white;
+}
+.island.theme-glass :is(.icon-btn,.quick-row button,.small-action,.native-test):hover{
+  background:#ffffff27;border-color:#ffffff44;
+}
+.island.theme-glass .brand-mark{
+  background:linear-gradient(140deg,#ffffff8a,#ffffff1d);color:white;
+  border:1px solid #ffffff70;box-shadow:inset 0 1px #fff9;
+}
+.island.theme-glass :is(.composer,.bubble,.key-row input,.tool-input,.tool-textarea){
+  background:#10151f29;border:1px solid #ffffff35;color:#fff;
+}
+.island.theme-glass :is(input,textarea)::placeholder{color:#ffffffa0}
+.island.theme-glass :is(.section-title,.date-line,.welcome-foot,.mini-card span,.chat-foot,.tool-help,.panel-footer){color:#e6eaf1}
+.island.theme-glass .toggle-row input:checked+i{background:#ffffffb0}
+.island.theme-glass .toggle-row input:checked+i::after{background:#344354}
+.island.theme-glass input[type=range]{accent-color:#e8f3ff}
+.island.theme-glass :is(.media-cover,.theme-preview.preview-glass){
+  background:linear-gradient(135deg,#ffffff45,#ffffff08);border-color:#ffffff65;
+  box-shadow:inset 0 1px #ffffff90;
+}
+.island.theme-glass button:focus-visible,.island.theme-glass input:focus-visible,.island.theme-glass textarea:focus-visible{
+  outline:2px solid #fff;outline-offset:3px;
+}
+.island.theme-glass:has(.liquid-glass-canvas[data-tone=dark]){
+  --surface-text:#152731;--surface-muted:#344851;
+}
+.island.theme-glass :is(.panel,.big-clock,.panel-head h1,.eyebrow,.tabs button,.mini-card b,.mini-card span,.date-line,.welcome-foot,.quick-row button,.toggle-row,.slider-row,.slider-row b,.section-title,.tool-help,.panel-footer,.panel-footer>span,.footer-version,.time-chip,.battery-chip,.settings-section,.theme-option,.native-test){
+  color:var(--surface-text);text-shadow:0 1px 3px #0002;
+}
+.island.theme-glass :is(.date-line,.welcome-foot,.mini-card span,.tool-help,.footer-version){color:var(--surface-muted)}
+.island.theme-glass:has(.liquid-glass-canvas[data-tone=dark]) :is(.panel,.pill){text-shadow:0 1px 2px #ffffff30}
+@media(prefers-reduced-transparency:reduce){
+  .island.theme-glass .island-morph{background:#28313bf2!important}
+  .island.theme-glass .liquid-glass-canvas{display:none}
+}
