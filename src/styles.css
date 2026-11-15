@@ -120,3 +120,6 @@
 .tool-weather{display:flex;flex-direction:column;gap:5px;padding:15px;background:#ffffff0b;border-radius:14px}
 .tool-weather strong{font-size:42px;line-height:1.1}
 .tool-weather span{color:#aaa9bb;font-size:11px}
+
+/* Match panel layout to the 430px native expanded window, not the folded pill. */
+.island .panel{width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 66px)}
