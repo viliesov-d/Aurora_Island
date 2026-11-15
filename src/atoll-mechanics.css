@@ -21,7 +21,7 @@
   box-shadow:inset 0 1px 0 #ffffff29,inset 0 -2px 4px #0b122824;
 }
 .app.is-open .island .island-morph{
-  width:calc(100% - 28px);height:calc(100vh - 82px);
+  width:calc(100% - 28px);height:calc(100vh - 24px);
   border-radius:var(--panel-radius);
   background:var(--panel-surface);
   box-shadow:0 24px 74px #0008,inset 0 1px 0 #ffffff34;
@@ -36,7 +36,7 @@
 .island .pill::after{opacity:.6}
 .app.is-open .island .pill{opacity:0;transform:translateY(-9px) scale(.97);pointer-events:none}
 .app.is-open .island .panel{
-  top:8px;left:14px;width:calc(100% - 28px);height:calc(100vh - 82px);
+  top:8px;left:14px;width:calc(100% - 28px);height:calc(100vh - 24px);
   max-height:none;z-index:3;
   background:transparent!important;border-color:transparent!important;
   box-shadow:none!important;backdrop-filter:none!important;
