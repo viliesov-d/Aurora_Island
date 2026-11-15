@@ -150,12 +150,23 @@ html,body,#root,.app,.island{background:transparent!important}
   background:rgba(21,31,50,.68);
 }
 .island.theme-glass .morph-full{
-  background:linear-gradient(144deg,rgba(61,84,114,.95),
-    rgba(23,35,56,.97) 53%,rgba(13,22,39,.98));
+  background:linear-gradient(144deg,
+    rgba(61,84,114,calc(var(--surface-opacity) * .99)),
+    rgba(23,35,56,var(--surface-opacity)) 53%,
+    rgba(13,22,39,var(--surface-opacity)));
 }
 .island.theme-glass .morph-compact{
-  background:linear-gradient(143deg,rgba(68,93,125,.93),
-    rgba(23,37,58,.95) 58%,rgba(17,29,48,.96));
+  background:linear-gradient(143deg,
+    rgba(68,93,125,var(--surface-opacity)),
+    rgba(23,37,58,var(--surface-opacity)) 58%,
+    rgba(17,29,48,var(--surface-opacity)));
+}
+.island.theme-glass .morph-rim{
+  opacity:clamp(.30,var(--glass-strength),.95);
+  background:
+    radial-gradient(ellipse calc(44% + var(--glass-blur)) 13%
+      at var(--lens-x,50%) 0%,#ffffff48,transparent 100%),
+    linear-gradient(140deg,#ffffff1d,transparent 32%,transparent 75%,#cbdfff1a);
 }
 /* Do not animate filters/shadows or the font-rasterizing panel itself. */
 .island .panel-head,.island .panel-body,.island .tabs{
