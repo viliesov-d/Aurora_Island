@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Reminders } from "./Reminders";
+import { nativeRead, nativeCopy, getLiveClips, removeLiveClip, clearLiveClips, LIVE_CLIPS_EVENT, type ClipboardRecord } from "./nativeIntegration";
 import { Clipboard, Copy, FileText, FolderOpen, Globe2, Search, StickyNote, Trash2, WandSparkles, Check, Plus } from "lucide-react";
 
 type Tool = "clipboard" | "shelf" | "text" | "notes" | "weather" | "launcher" | "reminders";
-type Clip = { id: number; text: string; pinned: boolean };
+type Clip = ClipboardRecord;
 type LinkEntry = { id: number; label: string; url: string };
 const store = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };
 function urlSafe(value: string): string | null {
@@ -30,6 +31,12 @@ export function Toolbox({ onAskAI }: { onAskAI: (text: string) => void }) {
   const [tool, setTool] = useState<Tool>("clipboard");
   const [notice, setNotice] = useState("");
   const [clips, setClips] = useState<Clip[]>(() => store("aurora:clips", []));
+  const [liveClips, setLiveClips] = useState<Clip[]>(getLiveClips);
+  useEffect(() => {
+    const update = () => setLiveClips(getLiveClips());
+    window.addEventListener(LIVE_CLIPS_EVENT, update);
+    return () => window.removeEventListener(LIVE_CLIPS_EVENT, update);
+  }, []);
   const [query, setQuery] = useState("");
   const [note, setNote] = useState(() => store("aurora:note", ""));
   const [text, setText] = useState("");
@@ -43,17 +50,17 @@ export function Toolbox({ onAskAI }: { onAskAI: (text: string) => void }) {
   useEffect(() => { try { localStorage.setItem("aurora:clips", JSON.stringify(clips.slice(0, 50))); } catch {} }, [clips]);
   useEffect(() => { try { localStorage.setItem("aurora:note", JSON.stringify(note)); } catch {} }, [note]);
   useEffect(() => { try { localStorage.setItem("aurora:links", JSON.stringify(links)); } catch {} }, [links]);
-  const filtered = useMemo(() => clips.filter(c => c.text.toLocaleLowerCase().includes(query.toLocaleLowerCase())).sort((a,b)=>Number(b.pinned)-Number(a.pinned)), [clips,query]);
+  const filtered = useMemo(() => [...clips, ...liveClips.filter(c => !clips.some(saved => saved.text === c.text))].filter(c => c.text.toLocaleLowerCase().includes(query.toLocaleLowerCase())).sort((a,b)=>Number(b.pinned)-Number(a.pinned)), [clips,liveClips,query]);
   const capture = async () => {
     try {
-      const value = await navigator.clipboard.readText();
+      const value = await nativeRead();
       if (!value.trim()) return setNotice("Буфер обміну порожній");
       setClips(v => [{ id: Date.now(), text: value.slice(0, 20000), pinned: false }, ...v.filter(c=>c.text!==value)].slice(0,50));
       setNotice("Додано до історії");
-    } catch { setNotice("Windows WebView заборонив читання. Скопіюйте текст і вставте у поле нижче."); }
+    } catch { setNotice("Не вдалося прочитати буфер Windows. Вставте текст у поле нижче."); }
   };
   const copy = async (value: string) => {
-    try { await navigator.clipboard.writeText(value); setNotice("Скопійовано"); } catch { setNotice("Не вдалося записати в буфер"); }
+    try { await nativeCopy(value); setNotice("Скопійовано"); } catch { setNotice("Не вдалося записати в буфер"); }
   };
   const [manual, setManual] = useState("");
   const addManual = () => { if(manual.trim()) { setClips(v=>[{id:Date.now(),text:manual.slice(0,20000),pinned:false},...v].slice(0,50));setManual(""); } };
@@ -78,12 +85,12 @@ export function Toolbox({ onAskAI }: { onAskAI: (text: string) => void }) {
     {notice&&<div className="tool-notice" role="status">{notice}</div>}
     {tool==="clipboard"&&<div className="tool-section">
       <div className="tool-heading"><Clipboard size={16}/> Історія буфера <button onClick={capture}>Зчитати зараз</button></div>
-      <p className="tool-help">Зберігає текст локально лише коли ви натискаєте «Зчитати» або додаєте його вручну. Паролі не слід додавати.</p>
+      <p className="tool-help">Збережені вручну записи залишаються локально. Якщо ввімкнути автоматичний моніторинг у налаштуваннях, нові записи зберігатимуться лише в памʼяті поточного вікна. Не вмикайте його для конфіденційних даних.</p>
       <div className="tool-inline"><input value={manual} onChange={e=>setManual(e.target.value)} placeholder="Вставте текст Ctrl+V" /><button onClick={addManual}><Plus size={14}/></button></div>
       <input className="tool-input" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Пошук в історії..." />
-      {filtered.map(c=><div key={c.id} className="tool-item"><span title={c.text}>{c.text.slice(0,220)}</span><button title="Закріпити" onClick={()=>setClips(v=>v.map(i=>i.id===c.id?{...i,pinned:!i.pinned}:i))}>{c.pinned?"★":"☆"}</button><button title="Копіювати" onClick={()=>void copy(c.text)}><Copy size={14}/></button><button title="Видалити" onClick={()=>setClips(v=>v.filter(i=>i.id!==c.id))}><Trash2 size={14}/></button></div>)}
+      {filtered.map(c=><div key={c.id} className="tool-item"><span title={c.text}>{c.text.slice(0,220)}</span><button title="Закріпити" onClick={()=>{if(liveClips.some(i=>i.id===c.id)){setClips(v=>[{...c,pinned:true},...v.filter(i=>i.text!==c.text)]);removeLiveClip(c.id);}else setClips(v=>v.map(i=>i.id===c.id?{...i,pinned:!i.pinned}:i));}}>{c.pinned?"★":"☆"}</button><button title="Копіювати" onClick={()=>void copy(c.text)}><Copy size={14}/></button><button title="Видалити" onClick={()=>{if(liveClips.some(i=>i.id===c.id))removeLiveClip(c.id);else setClips(v=>v.filter(i=>i.id!==c.id));}}><Trash2 size={14}/></button></div>)}
       {!filtered.length&&<p className="tool-help">Історія поки порожня.</p>}
-      {!!clips.length&&<button className="tool-quiet" onClick={()=>setClips([])}>Очистити історію</button>}
+      {(clips.length>0||liveClips.length>0)&&<button className="tool-quiet" onClick={()=>{setClips([]);clearLiveClips();}}>Очистити всю історію</button>}
     </div>}
     {tool==="shelf"&&<div className="tool-section">
       <div className="tool-heading"><FolderOpen size={16}/> Тимчасова полиця файлів</div>
