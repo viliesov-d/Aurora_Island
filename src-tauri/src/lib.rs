@@ -157,11 +157,12 @@ fn set_native_region(
         } else {
             let w = px(pill_width.min(size.width as f64 / scale));
             let left = (width - w) / 2;
-            // 10px overscan preserves WebView's subpixel anti-aliased edges.
+            // The elastic outline may reach up to 17 DIP beyond the shell;
+            // leave a 23 DIP overscan so the visible deformation is not clipped.
             CreateRoundRectRgn(
-                (left - px(10.0)).max(0), 0,
-                (left + w + px(10.0)).min(width), px(60.0),
-                px((radius + 10.0) * 2.0), px((radius + 10.0) * 2.0),
+                (left - px(23.0)).max(0), 0,
+                (left + w + px(23.0)).min(width), px(80.0),
+                px((radius + 23.0) * 2.0), px((radius + 23.0) * 2.0),
             )
         };
         if region.is_null() {
