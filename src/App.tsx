@@ -33,7 +33,13 @@ function loadPrefs(): Preferences {
 function readMessages(): Message[] { try { return JSON.parse(localStorage.getItem("aurora:chat") || "null") || initialMessages; } catch { return initialMessages; } }
 
 export default function App() {
-  const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false); const [tab,setTab]=useState<Tab>("home");
+  const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false);
+  const [tab,setTab]=useState<Tab>(()=>{
+    try {
+      const previous=localStorage.getItem("aurora:last-tab");
+      return (["home","media","chat","tools","commands","settings"] as string[]).includes(previous||"") ? previous as Tab : "home";
+    }catch{return "home"}
+  });
   const [hidden,setHidden]=useState(()=>{try{return localStorage.getItem("aurora:hidden")==="true"}catch{return false}});
   const hiddenLatest=useRef(hidden); hiddenLatest.current=hidden;
   const wasHidden=useRef(hidden);
@@ -131,6 +137,7 @@ export default function App() {
     setExpanded(false);
   };
   useOutsideCollapse(expanded&&!hidden,prefs.autoHide,()=>invokeMode(false));
+  useEffect(()=>{try{localStorage.setItem("aurora:last-tab",tab)}catch{}},[tab]);
   useEffect(()=>{try{localStorage.setItem("aurora:hidden",String(hidden))}catch{}},[hidden]);
   useEffect(()=>{
     if(!toast)return;
@@ -341,6 +348,13 @@ export default function App() {
     return list;
   },[prefs.modules.timer,prefs.modules.media,prefs.modules.battery,timerOn,seconds,media,battery]);
   const live=useLiveActivity(activities);
+  const smartToggle=()=>{
+    if(!expanded&&prefs.smartOpen){
+      if(live.selected?.id==="music")setTab("media");
+      else if(live.selected?.id==="timer")setTab("home");
+    }
+    invokeMode(!expanded);
+  };
 
   return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
@@ -349,11 +363,11 @@ export default function App() {
       <div ref={pillRef} className="pill" onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}
         onPointerDown={e=>{if(e.target===e.currentTarget)beginDrag(e)}} onPointerMove={moveDrag}
         onPointerUp={endDrag} onPointerCancel={endDrag}
-        onClick={e=>{if(e.target===e.currentTarget&&!suppressClick.current)invokeMode(!expanded);suppressClick.current=false;}}
+        onClick={e=>{if(e.target===e.currentTarget&&!suppressClick.current)smartToggle();suppressClick.current=false;}}
         onWheel={e=>{if(!expanded)live.rotate(e)}}>
         <svg className="magnetic-svg" aria-hidden="true" focusable="false"><path className="magnetic-shape" /></svg>
         <button type="button" className="drag-handle" onPointerDown={beginDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button>
-        <button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={()=>invokeMode(!expanded)}>
+        <button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={smartToggle}>
           <span className="brand-mark"><Sparkles size={14}/></span>
           {!live.selected&&!toast&&<span className="brand-name">aurora</span>}
         </button>
@@ -363,7 +377,7 @@ export default function App() {
           {!expanded&&!toast&&!live.selected&&prefs.modules.battery&&battery?.batteryPercent!=null&&<span className="battery-chip">{battery.charging?<BatteryCharging size={14}/>:<Battery size={14}/>} {battery.batteryPercent}%</span>}
           {!expanded&&!toast&&!live.selected&&prefs.modules.clock&&<span className="time-chip"><ClockDisplay kind="time"/></span>}
           {!expanded&&!toast&&!live.selected&&prefs.modules.media&&media?.available&&prefs.width>=275&&<button className="pill-media" aria-label="Відкрити музику" title={media.title||"Керування музикою"} onClick={()=>{setTab("media");invokeMode(true)}}><Music2 size={15}/></button>}
-          <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={()=>void invokeMode(!expanded)}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
+          <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={smartToggle}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
         </div>
       </div>
       <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" onPointerLeave={scheduleCollapse} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
@@ -389,6 +403,7 @@ export default function App() {
             <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
               <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
               <Toggle label="Заблокувати положення острова" checked={prefs.lockPosition} onChange={v=>updatePrefs({lockPosition:v})}/>
+              <Toggle label="Розумне відкриття активності" checked={prefs.smartOpen} onChange={v=>updatePrefs({smartOpen:v})}/>
               <Toggle label="Глобальна клавіша Ctrl+Alt+Space" checked={prefs.globalHotkey} onChange={v=>updatePrefs({globalHotkey:v})}/>
               <Toggle label="Автоматична історія буфера обміну" checked={prefs.clipboardWatch} onChange={v=>updatePrefs({clipboardWatch:v})}/>
               <p className="tool-help">Автозбереження буфера вимкнено за замовчуванням. При ввімкненні нові записи відстежуються у Windows та зберігаються тільки в сесії, без запису на диск. У буфер можуть потрапити паролі й особисті дані.</p>
