@@ -182,6 +182,6 @@ unsafe fn apply_windows_backdrop(window: &tauri::WebviewWindow) {
     use windows_sys::Win32::Foundation::HWND;
     if let Ok(hwnd) = window.hwnd() {
         let backdrop: u32 = 3; // DWMSBT_TRANSIENTWINDOW: native acrylic-like blur on supported Windows 11 builds.
-        let _ = DwmSetWindowAttribute(hwnd.0 as HWND, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop as *const _ as *const _, std::mem::size_of_val(&backdrop) as u32);
+        let _ = DwmSetWindowAttribute(hwnd.0 as HWND, DWMWA_SYSTEMBACKDROP_TYPE as u32, &backdrop as *const _ as *const _, std::mem::size_of_val(&backdrop) as u32);
     }
 }
