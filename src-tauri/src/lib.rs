@@ -1,5 +1,6 @@
 mod secure_key;
 mod audio;
+mod clipboard;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -149,10 +150,39 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
     Ok(())
 }
 
+#[tauri::command]
+fn set_global_hotkey(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    let shortcut = "Ctrl+Alt+Space";
+    let registry = app.global_shortcut();
+    if enabled {
+        if !registry.is_registered(shortcut) {
+            registry.on_shortcut(shortcut, move |app, _, event| {
+                if event.state() == ShortcutState::Pressed {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app.emit("aurora:open-commands", ());
+                }
+            }).map_err(|err| format!("Не вдалося ввімкнути Ctrl+Alt+Space: {err}"))?;
+        }
+    } else if registry.is_registered(shortcut) {
+        registry.unregister(shortcut).map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
         .setup(|app| {
+            // A shortcut collision never prevents the island from starting.
+            if let Err(err) = set_global_hotkey(app.handle().clone(), true) {
+                eprintln!("Aurora hotkey not available: {err}");
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
                 let _ = window.set_decorations(false);
