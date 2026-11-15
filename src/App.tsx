@@ -71,7 +71,6 @@ export default function App() {
   // A single stable WebView geometry. Only the Win32 HIT REGION changes
   // between compact and expanded; the actual WebView never resizes on click.
   const initializedNative = useRef(false);
-  const materialReady=useRef(false);
   const previousExpanded = useRef(false);
   const morphMs = Math.max(380, Math.min(680, Math.round(520 * 75 / prefs.speed)));
   const updateHitRegion=useCallback((open:boolean, hide:boolean, width:number, radius:number)=>{
@@ -122,7 +121,6 @@ export default function App() {
         console.warn("Native material fallback:",err);
       });
       initializedNative.current=true;
-      materialReady.current=true;
       await w.show(); // Never display the native window before mask/chrome setup.
     });
     return layoutQueue.current;
@@ -202,12 +200,9 @@ export default function App() {
     }
     return()=>window.clearTimeout(collapseResizeTimer.current);
   },[expanded,hidden,prefs.width,prefs.radius,morphMs,updateHitRegion]);
-  useEffect(()=>{
-    if(!materialReady.current)return;
-    void invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
-      console.warn("Aurora borderless refresh failed",err);
-    });
-  },[prefs.theme]);
+  // Theme changes are paint-only; touching Win32 non-client flags here caused
+  // intermittent titlebar flashes. Borderless is initialized once and
+  // reasserted natively on focus and tray/global-hotkey restore.
   useEffect(()=>{
     const w=getCurrentWindow();
     let saveTimer:number|undefined;
