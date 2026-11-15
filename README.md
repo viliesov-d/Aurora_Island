@@ -92,3 +92,16 @@ For Windows validation, also run `npm run tauri -- build --bundles nsis`, then m
 - **Scope:** this is not a native notification listener for *other apps* and it does not collect system notification contents. Those require a separate implementation with user consent.
 
 Windows-specific testing: install the NSIS artifact, copy Unicode text in another app, enable monitoring and verify transient history, pin to preserve, press `Ctrl+Alt+Space` outside Aurora, test while hidden in tray, set a 1-minute reminder, and test the native toast button. Also test at 125%/150% display scaling.
+
+
+## Visual refresh: sharp corners, Acrylic glass, magnetic edge
+
+This redesign keeps the existing native player, ChatGPT/API chat, clipboard, notifications and toolbox unchanged.
+
+- **Crisper edges:** the Win32 `SetWindowRgn` is now an *overscanned hit-test mask*, 7–10 logical pixels outside the CSS-rendered shell. CSS remains responsible for the visible rounded edge and its antialiasing. A narrow transparent margin can intercept clicks at the edge; the rest of the desktop stays interactive.
+- **Native Acrylic:** Liquid Glass uses Windows 11 DWM backdrop (or legacy Windows 10 Acrylic when supported), plus a layered CSS reflective lens: high-frequency rim highlights, soft refractions mimicked in the reflection layer, saturated blur, changing specular highlights. It is **not** Apple's actual GPU optical refraction shader, and backdrop availability varies by Windows build/transparency settings.
+- **Four truly distinct themes:** Classic (matte charcoal, Windows-style segmented UI), Liquid Glass (native acrylic, reflective/translucent surfaces), Soft Minimal (light matte with dark typography), Neon (angular futuristic edges and circuitry accents). Cards, typography, button shapes, borders, nav, backgrounds and shadows change together.
+- **Cursor magnetism:** opt-in (default on), a native `GetCursorPos` sample ~14 times per second while the pill is collapsed, with an interpolated edge deformation and moving highlight. Disabled in reduced-motion mode and while expanded. Toggle in Settings → Behavior.
+- **Readable expanded layout:** 568 logical px native window, up to 710 logical px high, limited by current monitor; 14 px content text, larger chat, cards, toolbar, settings and navigation. Delayed native window collapse allows the exit spring animation to finish before shrinking the hit region. Monitor size and DPI scaling are taken into account.
+
+**Manual Windows QA before merging:** install the PR's NSIS artifact, test edges at 100/125/150/200% DPI, monitor boundaries, dragging, clickable controls in all themes, native Acrylic on Windows 10/11, animation smoothness, mouse attraction from outside the capsule, auto-hide, hotkey and tray. Check that the island does not block unrelated desktop clicks or leave an invisible region after collapse.
