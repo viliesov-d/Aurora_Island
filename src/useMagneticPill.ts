@@ -3,161 +3,153 @@ import { invoke } from "@tauri-apps/api/core";
 
 type Cursor = { x: number; y: number };
 type Side = "left" | "right" | "top" | "bottom";
-const limit = (n: number, low: number, high: number) => Math.max(low, Math.min(high, n));
-const smooth = (n: number) => n * n * (3 - 2 * n);
-const round = (n: number) => Math.round(n * 10) / 10;
+type Pull = Record<Side, number>;
+const edges: Side[] = ["left", "right", "top", "bottom"];
+const empty = (): Pull => ({left:0,right:0,top:0,bottom:0});
+const clamp = (x:number,a:number,b:number) => Math.min(b,Math.max(a,x));
+const ease = (x:number) => x*x*(3-2*x);
+const px = (x:number) => (Math.round(x*10)/10).toString();
+const pair=(x:number,y:number)=>px(x)+" "+px(y);
 
-/** A single continuous capsule path with tangent-connected curves. */
-export function magneticPath(w: number, h: number, side: Side, px: number, py: number, pull: number) {
-  const radius = h / 2;
-  const b = limit(pull, 0, 1.08) * 13;
-  const left = side === "left" ? b : 0;
-  const right = side === "right" ? b : 0;
-  const top = side === "top" ? b : 0;
-  const bottom = side === "bottom" ? b : 0;
-  const tx = limit(px, radius + 47, w - radius - 47);
-  const bx = limit(px, radius + 47, w - radius - 47);
-  const ry = limit(py, h * .38, h * .62);
-  const ly = limit(py, h * .38, h * .62);
-  const point = (x: number, y: number) => [round(x), round(y)].join(" ");
-  const p = ["M", point(radius, 0)];
-  if (top > .02) {
-    p.push("L", point(tx - 40, 0));
-    p.push("C", point(tx - 20, 0), point(tx - 19, -top), point(tx, -top));
-    p.push("C", point(tx + 19, -top), point(tx + 20, 0), point(tx + 40, 0));
+/** Capsule drawn as one continuous path with continuously weighted edge pulls. */
+export function magneticPath(w:number,h:number,pull:Pull,x:number,y:number) {
+  const r=h/2;
+  const left=clamp(pull.left,0,1.06)*13;
+  const right=clamp(pull.right,0,1.06)*13;
+  const top=clamp(pull.top,0,1.06)*13;
+  const bottom=clamp(pull.bottom,0,1.06)*13;
+  const tx=clamp(x,r+47,w-r-47),bx=tx;
+  const ry=h/2+clamp(y-h/2,-h*.12,h*.12)*clamp(right/13,0,1);
+  const ly=h/2+clamp(y-h/2,-h*.12,h*.12)*clamp(left/13,0,1);
+  const path=["M",pair(r,0)];
+  if(top>.01) {
+    path.push("L",pair(tx-40,0));
+    path.push("C",pair(tx-20,0),pair(tx-19,-top),pair(tx,-top));
+    path.push("C",pair(tx+19,-top),pair(tx+20,0),pair(tx+40,0));
   }
-  p.push("L", point(w - radius, 0));
-  p.push("C", point(w - radius * .25, 0),
-    point(w + right, ry * .20), point(w + right, ry));
-  p.push("C", point(w + right, ry + (h - ry) * .80),
-    point(w - radius * .25, h), point(w - radius, h));
-  if (bottom > .02) {
-    p.push("L", point(bx + 40, h));
-    p.push("C", point(bx + 20, h), point(bx + 19, h + bottom), point(bx, h + bottom));
-    p.push("C", point(bx - 19, h + bottom), point(bx - 20, h), point(bx - 40, h));
+  path.push("L",pair(w-r,0));
+  path.push("C",pair(w-r*.25,0),pair(w+right,ry*.2),pair(w+right,ry));
+  path.push("C",pair(w+right,ry+(h-ry)*.8),pair(w-r*.25,h),pair(w-r,h));
+  if(bottom>.01){
+    path.push("L",pair(bx+40,h));
+    path.push("C",pair(bx+20,h),pair(bx+19,h+bottom),pair(bx,h+bottom));
+    path.push("C",pair(bx-19,h+bottom),pair(bx-20,h),pair(bx-40,h));
   }
-  p.push("L", point(radius, h));
-  p.push("C", point(radius * .25, h),
-    point(-left, ly + (h - ly) * .80), point(-left, ly));
-  p.push("C", point(-left, ly * .20),
-    point(radius * .25, 0), point(radius, 0), "Z");
-  return p.join(" ");
+  path.push("L",pair(r,h));
+  path.push("C",pair(r*.25,h),pair(-left,ly+(h-ly)*.8),pair(-left,ly));
+  path.push("C",pair(-left,ly*.2),pair(r*.25,0),pair(r,0),"Z");
+  return path.join(" ");
 }
-
-function edgeDistance(side: Side, x: number, y: number, w: number, h: number) {
-  return side === "left" ? Math.abs(x) :
-    side === "right" ? Math.abs(x - w) :
-    side === "top" ? Math.abs(y) : Math.abs(y - h);
+function targetPull(x:number,y:number,w:number,h:number):Pull {
+  const dx=Math.max(-x,0,x-w),dy=Math.max(-y,0,y-h);
+  const outside=Math.hypot(dx,dy),inside=dx===0&&dy===0;
+  let amount=0;
+  if(inside){
+    const near=Math.min(x,w-x,y,h-y);
+    amount=.32*ease(1-clamp(near/19,0,1));
+  }else if(outside<100){
+    amount=ease(1-outside/100);
+  }
+  if(amount<.001)return empty();
+  // Distance to the *actual finite side*, not an infinite axis. At corners,
+  // soft weights smoothly share the pull between adjoining edges.
+  const distances:Pull={
+    left:Math.hypot(x,dy),
+    right:Math.hypot(x-w,dy),
+    top:Math.hypot(y,dx),
+    bottom:Math.hypot(y-h,dx),
+  };
+  const nearest=Math.min(...edges.map(k=>distances[k]));
+  const weights=empty();
+  let total=0;
+  for(const k of edges) {weights[k]=Math.exp(-(distances[k]-nearest)/7);total+=weights[k];}
+  for(const k of edges) weights[k]=amount*weights[k]/total;
+  return weights;
 }
 
 /**
- * Stable cursor spring: one animation-frame integrator, one IPC pointer sample
- * every 70ms, no React rerender and no redraw while idle.
+ * Pointer target is sampled from Win32 at 65ms, then a frame-time independent
+ * four-channel damped spring interpolates independently for each edge.
+ * This removes the hard side switch / corner snapping in the old geometry.
  */
-export function useMagneticPill(enabled: boolean, expanded: boolean) {
-  const pillRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const pill = pillRef.current;
-    const path = pill?.querySelector<SVGPathElement>(".magnetic-shape");
-    const svg = pill?.querySelector<SVGSVGElement>(".magnetic-svg");
-    if (!pill || !path || !svg) return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let disposed = false, pending = false, frame = 0, lastFrame = 0;
-    let pointer: Cursor | null = null;
-    let side: Side = "right";
-    let strength = 0, velocity = 0;
-    let anchorX = 0, anchorY = 22;
-    let width = 0, height = 0;
-    const reset = () => {
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
-      svg.style.opacity = "0";
-      pill.style.setProperty("--magnet-strength", "0");
-      pill.style.setProperty("--lens-x", "50%");
-      pill.style.setProperty("--lens-y", "0%");
+export function useMagneticPill(enabled:boolean,expanded:boolean){
+  const pillRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    const el=pillRef.current;
+    const svg=el?.querySelector<SVGSVGElement>(".magnetic-svg");
+    const path=el?.querySelector<SVGPathElement>(".magnetic-shape");
+    if(!el||!svg||!path)return;
+    const reduced=window.matchMedia("(prefers-reduced-motion: reduce)");
+    let alive=true,busy=false,frame=0,last=0;
+    let cursor:Cursor|null=null;
+    let w=0,h=0,ax=0,ay=22;
+    const value=empty(),velocity=empty();
+    const reset=()=>{
+      if(frame)cancelAnimationFrame(frame);
+      frame=0;svg.style.opacity="0";
+      el.style.setProperty("--magnet-strength","0");
+      el.style.setProperty("--lens-x","50%");
+      el.style.setProperty("--lens-y","0%");
     };
-    const render = (time: number) => {
-      frame = 0;
-      if (disposed || document.hidden || reduceMotion.matches) return;
-      const rect = pill.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      if (rect.width !== width || rect.height !== height) {
-        width = rect.width; height = rect.height;
-        svg.setAttribute("viewBox", "-20 -20 " + round(width + 40) + " " + round(height + 40));
-        anchorX = width / 2; anchorY = height / 2;
+    const draw=(time:number)=>{
+      frame=0;
+      if(!alive||document.hidden||reduced.matches)return;
+      const rect=el.getBoundingClientRect();
+      if(!rect.width||!rect.height)return;
+      if(w!==rect.width||h!==rect.height){
+        w=rect.width;h=rect.height;ax=w/2;ay=h/2;
+        svg.setAttribute("viewBox","-20 -20 "+px(w+40)+" "+px(h+40));
       }
-      let desired = 0;
-      let targetX = anchorX, targetY = anchorY;
-      if (pointer) {
-        const x = pointer.x - rect.left, y = pointer.y - rect.top;
-        const dx = Math.max(-x, 0, x - width);
-        const dy = Math.max(-y, 0, y - height);
-        const outside = Math.hypot(dx, dy);
-        const isInside = dx === 0 && dy === 0;
-        if (!isInside && outside < 100) {
-          desired = smooth(1 - outside / 100);
-        } else if (isInside) {
-          const nearEdge = Math.min(x, width - x, y, height - y);
-          desired = .36 * smooth(1 - limit(nearEdge / 19, 0, 1));
+      let desired=empty(),tx=ax,ty=ay;
+      if(cursor){
+        const x=cursor.x-rect.left,y=cursor.y-rect.top;
+        desired=targetPull(x,y,w,h);
+        if(edges.some(k=>desired[k]>.0005)){
+          tx=clamp(x,0,w);ty=clamp(y,0,h);
         }
-        const sides: Side[] = ["left", "right", "top", "bottom"];
-        let closest = side;
-        for (const candidate of sides) {
-          if (edgeDistance(candidate, x, y, width, height) + 10 <
-              edgeDistance(closest, x, y, width, height)) closest = candidate;
+      }
+      const dt=Math.min(.034,last?(time-last)/1000:1/60);
+      last=time;
+      const steps=Math.max(1,Math.ceil(dt/.007));
+      const step=dt/steps;
+      for(let i=0;i<steps;i++){
+        for(const k of edges){
+          velocity[k]+=(248*(desired[k]-value[k])-30*velocity[k])*step;
+          value[k]+=velocity[k]*step;
         }
-        side = closest; // Hysteresis prevents flicker near corners.
-        targetX = limit(x, 0, width);
-        targetY = limit(y, 0, height);
       }
-      const dt = Math.min(.033, lastFrame ? (time - lastFrame) / 1000 : 1/60);
-      lastFrame = time;
-      const steps = Math.max(1, Math.ceil(dt / .008));
-      for (let i = 0; i < steps; i++) {
-        velocity += (250 * (desired - strength) - 30 * velocity) * dt / steps;
-        strength += velocity * dt / steps;
+      const follow=1-Math.exp(-14*dt);
+      ax+=(tx-ax)*follow;ay+=(ty-ay)*follow;
+      let sum=0,settled=true;
+      for(const k of edges){
+        if(Math.abs(value[k]-desired[k])<.002&&Math.abs(velocity[k])<.024){
+          value[k]=desired[k];velocity[k]=0;
+        }else settled=false;
+        sum+=Math.max(0,value[k]);
       }
-      const response = 1 - Math.exp(-14 * dt);
-      anchorX += (targetX - anchorX) * response;
-      anchorY += (targetY - anchorY) * response;
-      if (Math.abs(desired - strength) < .002 && Math.abs(velocity) < .025) {
-        strength = desired; velocity = 0;
+      svg.style.opacity=sum<.006?"0":String(Math.min(.86,sum));
+      if(sum>=.006){
+        path.setAttribute("d",magneticPath(w,h,value,ax,ay));
+        el.style.setProperty("--lens-x",px(ax/w*100)+"%");
+        el.style.setProperty("--lens-y",px(ay/h*100)+"%");
       }
-      const actual = limit(strength, 0, 1.08);
-      svg.style.opacity = actual < .006 ? "0" : String(Math.min(.84, actual));
-      if (actual >= .006) {
-        path.setAttribute("d", magneticPath(width, height, side, anchorX, anchorY, actual));
-        pill.style.setProperty("--lens-x", String(round(anchorX/width*100)) + "%");
-        pill.style.setProperty("--lens-y", String(round(anchorY/height*100)) + "%");
-      }
-      pill.style.setProperty("--magnet-strength", String(round(actual)));
-      if (Math.abs(desired - strength) > .002 || Math.abs(velocity) > .025 ||
-          Math.abs(targetX - anchorX) > .8 || Math.abs(targetY - anchorY) > .8) {
-        frame = requestAnimationFrame(render);
-      }
+      el.style.setProperty("--magnet-strength",px(sum));
+      if(!settled||Math.abs(tx-ax)>.8||Math.abs(ty-ay)>.8)
+        frame=requestAnimationFrame(draw);
     };
-    const poll = async () => {
-      if (disposed || pending || document.hidden || reduceMotion.matches) return;
-      pending = true;
-      try {
-        pointer = await invoke<Cursor | null>("cursor_position");
-      } catch { pointer = null; }
-      finally {
-        pending = false;
-        if (!disposed && !frame) frame = requestAnimationFrame(render);
-      }
+    const poll=async()=>{
+      if(!alive||busy||document.hidden||reduced.matches)return;
+      busy=true;
+      try{cursor=await invoke<Cursor|null>("cursor_position")}
+      catch{cursor=null}
+      finally{busy=false;if(alive&&!frame)frame=requestAnimationFrame(draw)}
     };
-    const onVisibility = () => { if (document.hidden) reset(); else void poll(); };
-    if (!enabled || expanded || reduceMotion.matches) { reset(); return; }
+    const visibility=()=>{if(document.hidden)reset();else void poll();};
+    if(!enabled||expanded||reduced.matches){reset();return}
     void poll();
-    const interval = window.setInterval(() => void poll(), 70);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      disposed = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibility);
-      reset();
-    };
-  }, [enabled, expanded]);
+    const timer=window.setInterval(()=>void poll(),65);
+    document.addEventListener("visibilitychange",visibility);
+    return()=>{alive=false;window.clearInterval(timer);document.removeEventListener("visibilitychange",visibility);reset()};
+  },[enabled,expanded]);
   return pillRef;
 }
