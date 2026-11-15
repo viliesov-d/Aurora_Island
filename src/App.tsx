@@ -72,12 +72,12 @@ export default function App() {
       const scale=await w.scaleFactor();
       const previous=await w.outerSize();
       const position=await w.outerPosition();
-      const frameWidth=hide?184:open?568:pillWidth+32;
+      const frameWidth=hide?184:open?568:pillWidth+56;
       const monitor=await currentMonitor();
       const availableHeight=monitor
         ? (monitor.size.height-(position.y-monitor.position.y)-22)/scale
         : 710;
-      const frameHeight=hide?40:open?Math.max(390,Math.min(710,availableHeight)):64;
+      const frameHeight=hide?40:open?Math.max(390,Math.min(710,availableHeight)):86;
       let x=Math.round(position.x+(previous.width-frameWidth*scale)/2);
       let y=position.y;
       if(!restoredPosition.current){
