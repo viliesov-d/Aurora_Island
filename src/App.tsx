@@ -71,6 +71,7 @@ export default function App() {
   // A single stable WebView geometry. Only the Win32 HIT REGION changes
   // between compact and expanded; the actual WebView never resizes on click.
   const initializedNative = useRef(false);
+  const materialReady=useRef(false);
   const previousExpanded = useRef(false);
   const morphMs = Math.max(380, Math.min(680, Math.round(520 * 75 / prefs.speed)));
   const updateHitRegion=useCallback((open:boolean, hide:boolean, width:number, radius:number)=>{
@@ -115,7 +116,11 @@ export default function App() {
       await invoke("set_native_region",{
         expanded:false,pillWidth:prefs.width,radius:prefs.radius,hidden,
       });
+      // Material and borderless state must finish BEFORE the window is shown,
+      // otherwise WebView2 can flash the original Windows title bar.
+      await invoke("set_native_material",{theme:prefs.theme});
       initializedNative.current=true;
+      materialReady.current=true;
       await w.show(); // Never display the native window before mask/chrome setup.
     });
     return layoutQueue.current;
@@ -196,8 +201,9 @@ export default function App() {
     return()=>window.clearTimeout(collapseResizeTimer.current);
   },[expanded,hidden,prefs.width,prefs.radius,morphMs,updateHitRegion]);
   useEffect(()=>{
+    if(!materialReady.current)return;
     void invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
-      console.warn("Native Acrylic material is not available on this Windows build",err);
+      console.warn("Aurora borderless refresh failed",err);
     });
   },[prefs.theme]);
   useEffect(()=>{
