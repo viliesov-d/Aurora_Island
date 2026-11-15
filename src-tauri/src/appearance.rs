@@ -33,18 +33,46 @@ pub fn cursor_position(window: tauri::WebviewWindow) -> Result<Option<CursorPoin
     }
 }
 
-/// Windows 11 uses DWM system acrylic; older supported Windows 10 builds use
-/// the composition acrylic path. Unlike CSS blur, this samples the OS backdrop.
+/// Remove any Win32 non-client frame that may be reintroduced by DWM or
+/// a Windows backdrop effect. A region alone does not prevent caption buttons.
+#[cfg(windows)]
+pub fn ensure_borderless(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE,
+        WS_CAPTION, WS_THICKFRAME, WS_SYSMENU, WS_MINIMIZEBOX, WS_MAXIMIZEBOX,
+        WS_POPUP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_FRAMECHANGED,
+    };
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+    unsafe {
+        let old_style = GetWindowLongW(hwnd.0, GWL_STYLE) as u32;
+        let borderless = (old_style &
+            !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX))
+            | WS_POPUP;
+        if old_style != borderless {
+            SetWindowLongW(hwnd.0, GWL_STYLE, borderless as i32);
+            if SetWindowPos(
+                hwnd.0, std::ptr::null_mut(), 0, 0, 0, 0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
+            ) == 0 {
+                return Err("Windows не дозволив прибрати системну рамку.".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Native full-window acrylic fills the entire rectangle of a transparent
+/// WebView2 window (including outside the capsule) and may restore native
+/// titlebar buttons. Keep the Windows compositor transparent instead; render
+/// the frosted lens only inside Aurora's rounded DOM surface.
 #[tauri::command]
 pub fn set_native_material(window: tauri::WebviewWindow, theme: String) -> Result<(), String> {
     #[cfg(windows)] {
-        if theme == "glass" {
-            window_vibrancy::apply_acrylic(&window, Some((24, 28, 42, 102)))
-                .map_err(|err| err.to_string())
-        } else {
-            window_vibrancy::clear_acrylic(&window)
-                .map_err(|err| err.to_string())
-        }
+        let _ = theme;
+        // Revert any acrylic left by earlier Aurora sessions or theme switches.
+        let _ = window_vibrancy::clear_acrylic(&window);
+        window.set_decorations(false).map_err(|e| e.to_string())?;
+        ensure_borderless(&window)
     }
     #[cfg(not(windows))] {
         let _ = (window, theme);
