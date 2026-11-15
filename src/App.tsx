@@ -10,6 +10,7 @@ import { defaults, type Message, type Preferences, type Tab, type Theme } from "
 import { MediaPane, type MediaState, type VolumeState } from "./MediaPane";
 import { Toolbox } from "./Toolbox";
 import { CommandPalette } from "./CommandPalette";
+import { useMagneticPill } from "./useMagneticPill";
 import { useClipboardWatcher, useReminderNotifications, showWindowsNotification } from "./nativeIntegration";
 
 const themeNames: Record<Theme,string> = { classic:"Classic", glass:"Liquid Glass", soft:"Soft Minimal", neon:"Neon" };
@@ -23,7 +24,7 @@ function loadPrefs(): Preferences {
       ...saved,
       width: Math.min(340, Math.max(240, Number(saved.width) || defaults.width)),
       opacity: Math.min(100, Math.max(35, Number(saved.opacity) || defaults.opacity)),
-      blur: Math.min(24, Math.max(0, Number(saved.blur) || 0))
+      blur: Math.min(30, Math.max(0, Number(saved.blur) || 0))
     };
   } catch { return defaults; }
 }
@@ -33,6 +34,7 @@ export default function App() {
   const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false); const [tab,setTab]=useState<Tab>("home");
   useClipboardWatcher(prefs.clipboardWatch);
   useReminderNotifications(prefs.notifications);
+  const pillRef = useMagneticPill(prefs.cursorPull, expanded);
   const [battery,setBattery]=useState<{batteryPercent:number|null;charging:boolean|null}|null>(null); const [messages,setMessages]=useState<Message[]>(readMessages); const [draft,setDraft]=useState(""); const [busy,setBusy]=useState(false); const [hasKey,setHasKey]=useState(false); const [apiKey,setApiKey]=useState(""); const [seconds,setSeconds]=useState(300); const [timerOn,setTimerOn]=useState(false); const [error,setError]=useState("");
   const [media,setMedia]=useState<MediaState|null>(null);
   const [volume,setVolume]=useState<VolumeState|null>(null);
@@ -44,6 +46,8 @@ export default function App() {
   const hoverTimer=useRef<number|undefined>(undefined);
   const skipHover=useRef(false);
   const layoutQueue=useRef<Promise<void>>(Promise.resolve());
+  const collapseResizeTimer=useRef<number|undefined>(undefined);
+  const initializedLayout=useRef(false);
   const restoredPosition=useRef(false);
   const chatEnd=useRef<HTMLDivElement>(null);
   // Serializing layout mutations prevents stale window regions after rapid toggles.
@@ -53,8 +57,12 @@ export default function App() {
       const scale=await w.scaleFactor();
       const previous=await w.outerSize();
       const position=await w.outerPosition();
-      const frameWidth=open?Math.max(430,pillWidth+110):pillWidth+16;
-      const frameHeight=open?506:52;
+      const frameWidth=open?568:pillWidth+32;
+      const monitor=await w.currentMonitor();
+      const availableHeight=monitor
+        ? (monitor.size.height-(position.y-monitor.position.y)-22)/scale
+        : 710;
+      const frameHeight=open?Math.max(390,Math.min(710,availableHeight)):64;
       let x=Math.round(position.x+(previous.width-frameWidth*scale)/2);
       let y=position.y;
       if(!restoredPosition.current){
@@ -66,6 +74,14 @@ export default function App() {
             y=Math.round(saved.y);
           }
         } catch { /* Ignore invalid position data. */ }
+      }
+      if(open&&monitor){
+        const minX=monitor.position.x+4;
+        const maxX=monitor.position.x+monitor.size.width-Math.round(frameWidth*scale)-4;
+        x=Math.min(Math.max(x,minX),Math.max(minX,maxX));
+        const minY=monitor.position.y+2;
+        const maxY=monitor.position.y+monitor.size.height-Math.round(frameHeight*scale)-6;
+        y=Math.min(Math.max(y,minY),Math.max(minY,maxY));
       }
       await w.setSize(new LogicalSize(frameWidth,frameHeight));
       await w.setPosition(new PhysicalPosition(x,y));
@@ -81,7 +97,24 @@ export default function App() {
   };
   const updatePrefs=(next:Partial<Preferences>)=>setPrefs(p=>({...p,...next}));
   useEffect(()=>{localStorage.setItem("aurora:prefs",JSON.stringify(prefs));document.documentElement.dataset.theme=prefs.theme;document.documentElement.style.setProperty("--pill-width",`${prefs.width}px`);document.documentElement.style.setProperty("--glass-blur",`${prefs.blur}px`);document.documentElement.style.setProperty("--glass-strength",String(prefs.glass/100));document.documentElement.style.setProperty("--motion-speed",`${prefs.speed/100}`);document.documentElement.style.setProperty("--surface-opacity",String(prefs.opacity/100));document.documentElement.style.setProperty("--island-radius",`${prefs.radius}px`);document.documentElement.style.setProperty("--accent",prefs.accent);},[prefs]);
-  useEffect(()=>{void resizeWindow(expanded,prefs.width,prefs.radius)},[expanded,prefs.width,prefs.radius,resizeWindow]);
+  useEffect(()=>{
+    window.clearTimeout(collapseResizeTimer.current);
+    if(expanded || !initializedLayout.current){
+      initializedLayout.current=true;
+      void resizeWindow(expanded,prefs.width,prefs.radius);
+    }else{
+      // Let the exit animation finish before shrinking the native hit region.
+      collapseResizeTimer.current=window.setTimeout(()=>{
+        void resizeWindow(false,prefs.width,prefs.radius);
+      },310);
+    }
+    return()=>window.clearTimeout(collapseResizeTimer.current);
+  },[expanded,prefs.width,prefs.radius,resizeWindow]);
+  useEffect(()=>{
+    void invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
+      console.warn("Native Acrylic material is not available on this Windows build",err);
+    });
+  },[prefs.theme]);
   useEffect(()=>{
     const w=getCurrentWindow();
     let saveTimer:number|undefined;
@@ -230,7 +263,8 @@ export default function App() {
 
   return <main className={`app ${expanded?"is-open":""}`} onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
-      <div className="pill" onPointerDown={e=>{if(e.target===e.currentTarget)startDrag(e)}}>
+      <div ref={pillRef} className="pill" onPointerDown={e=>{if(e.target===e.currentTarget)startDrag(e)}}>
+        <span className="magnetic-edge" aria-hidden="true" />
         <button type="button" className="drag-handle" onPointerDown={startDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button><button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={()=>invokeMode(!expanded)}><span className="brand-mark"><Sparkles size={14}/></span><span className="brand-name">aurora</span></button>
         <div className="pill-status">
           {prefs.modules.battery&&battery?.batteryPercent!=null&&<span className="battery-chip">{battery.charging?<BatteryCharging size={14}/>:<Battery size={14}/>} {battery.batteryPercent}%</span>}
@@ -239,7 +273,7 @@ export default function App() {
           <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={()=>void invokeMode(!expanded)}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
         </div>
       </div>
-      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" initial={{opacity:0,y:-8,scale:.985}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-8,scale:.985}} transition={{duration:.24}}>
+      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" initial={{opacity:0,y:-16}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
         <header className="panel-head"><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
         <nav className="tabs"><button className={tab==="home"?"active":""} onClick={()=>setTab("home")}><Command size={15}/> Огляд</button>{(prefs.modules.media||prefs.modules.volume)&&<button className={tab==="media"?"active":""} onClick={()=>setTab("media")}><Music2 size={15}/> Музика</button>}<button className={tab==="chat"?"active":""} onClick={()=>setTab("chat")}><MessageCircle size={15}/> AI чат</button><button className={tab==="tools"?"active":""} onClick={()=>setTab("tools")}><Command size={15}/> Інструменти</button><button className={tab==="commands"?"active":""} onClick={()=>setTab("commands")}><Command size={15}/> Пошук</button><button className={tab==="settings"?"active":""} onClick={()=>setTab("settings")}><Settings2 size={15}/> Налаштування</button></nav>
         <div className="panel-body">
@@ -257,9 +291,10 @@ export default function App() {
           {tab==="commands"&&<CommandPalette onSelectTab={setTab} onAskAI={value=>{if(value){setDraft(value);setTab("chat")}}}/>}
           {tab==="media"&&<MediaPane media={prefs.modules.media?media:null} volume={prefs.modules.volume?volume:null} mediaEnabled={prefs.modules.media} volumeEnabled={prefs.modules.volume} busy={mediaBusy} error={audioError} onControl={controlMedia} onVolumeChange={changeVolume} onMute={()=>void toggleMute()} onRefresh={()=>{void refreshMedia();void refreshVolume();}}/>}
           {tab==="chat"&&<div className="chat-view"><div className="chat-topline"><span><ShieldCheck size={14}/> API-ключ захищений DPAPI</span><label className="attach-btn">Прикріпити файл<input type="file" accept=".txt,.md,.json,.csv,.log,.yaml,.yml,.xml" onChange={e=>attachText(e.target.files?.[0])}/></label></div><div className="messages">{messages.map((m,i)=><div className={`message ${m.role}`} key={i}><div className="avatar">{m.role==="assistant"?<Sparkles size={14}/>:"Я"}</div><div className="bubble">{m.role==="assistant"?<Suspense fallback={m.content}><ReactMarkdown>{m.content|| (busy&&i===messages.length-1?"Думаю…":"")}</ReactMarkdown></Suspense>:m.content}</div></div>)}<div ref={chatEnd}/></div>{error&&<div className="error-msg">{error}</div>}<form className="composer" onSubmit={e=>{e.preventDefault();void sendMessage()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void sendMessage()}}} placeholder="Напишіть повідомлення…"/><button type="submit" disabled={busy||!draft.trim()} aria-label="Надіслати"><Send size={16}/></button></form><div className="chat-foot">Відповіді надходять через офіційний OpenAI API · модель GPT-4.1 mini</div></div>}
-          {tab==="settings"&&<div className="settings-view"><div className="settings-section"><div className="section-title">ОФОРМЛЕННЯ</div><div className="theme-grid">{(Object.keys(themeNames) as Theme[]).map(t=><button key={t} className={`theme-option ${prefs.theme===t?"selected":""}`} onClick={()=>updatePrefs({theme:t})}><span className={`theme-preview preview-${t}`}><i/></span><span>{themeNames[t]}</span></button>)}</div><Slider label="Ширина острова" value={prefs.width} min={240} max={340} suffix=" px" onChange={v=>updatePrefs({width:v})}/><Slider label="Заокруглення" value={prefs.radius} min={18} max={38} suffix=" px" onChange={v=>updatePrefs({radius:v})}/><Slider label="Прозорість" value={prefs.opacity} min={35} max={100} suffix="%" onChange={v=>updatePrefs({opacity:v})}/><label className="color-row">Акцентний колір<input type="color" value={prefs.accent} onChange={e=>updatePrefs({accent:e.target.value})}/></label>{prefs.theme==="glass"&&<><Slider label="Розмиття фону" value={prefs.blur} min={0} max={24} suffix=" px" onChange={v=>updatePrefs({blur:v})}/><Slider label="Інтенсивність скла" value={prefs.glass} min={10} max={100} suffix="%" onChange={v=>updatePrefs({glass:v})}/></>}<Slider label="Швидкість анімації" value={prefs.speed} min={35} max={140} suffix="%" onChange={v=>updatePrefs({speed:v})}/></div>
+          {tab==="settings"&&<div className="settings-view"><div className="settings-section"><div className="section-title">ОФОРМЛЕННЯ</div><div className="theme-grid">{(Object.keys(themeNames) as Theme[]).map(t=><button key={t} className={`theme-option ${prefs.theme===t?"selected":""}`} onClick={()=>updatePrefs({theme:t})}><span className={`theme-preview preview-${t}`}><i/></span><span>{themeNames[t]}</span></button>)}</div><Slider label="Ширина острова" value={prefs.width} min={240} max={340} suffix=" px" onChange={v=>updatePrefs({width:v})}/><Slider label="Заокруглення" value={prefs.radius} min={18} max={38} suffix=" px" onChange={v=>updatePrefs({radius:v})}/><Slider label="Прозорість" value={prefs.opacity} min={35} max={100} suffix="%" onChange={v=>updatePrefs({opacity:v})}/><label className="color-row">Акцентний колір<input type="color" value={prefs.accent} onChange={e=>updatePrefs({accent:e.target.value})}/></label>{prefs.theme==="glass"&&<><Slider label="Розмиття фону" value={prefs.blur} min={0} max={30} suffix=" px" onChange={v=>updatePrefs({blur:v})}/><Slider label="Інтенсивність скла" value={prefs.glass} min={10} max={100} suffix="%" onChange={v=>updatePrefs({glass:v})}/></>}<Slider label="Швидкість анімації" value={prefs.speed} min={35} max={140} suffix="%" onChange={v=>updatePrefs({speed:v})}/></div>
             <div className="settings-section"><div className="section-title">МОДУЛІ</div><Toggle label="Годинник" checked={prefs.modules.clock} onChange={v=>updatePrefs({modules:{...prefs.modules,clock:v}})}/><Toggle label="Батарея (Windows API)" checked={prefs.modules.battery} onChange={v=>updatePrefs({modules:{...prefs.modules,battery:v}})}/><Toggle label="Таймер" checked={prefs.modules.timer} onChange={v=>updatePrefs({modules:{...prefs.modules,timer:v}})}/><Toggle label="Керування музикою (SMTC)" checked={prefs.modules.media} onChange={v=>updatePrefs({modules:{...prefs.modules,media:v}})}/><Toggle label="Системна гучність" checked={prefs.modules.volume} onChange={v=>updatePrefs({modules:{...prefs.modules,volume:v}})}/></div>
             <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
+              <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
               <Toggle label="Глобальна клавіша Ctrl+Alt+Space" checked={prefs.globalHotkey} onChange={v=>updatePrefs({globalHotkey:v})}/>
               <Toggle label="Автоматична історія буфера обміну" checked={prefs.clipboardWatch} onChange={v=>updatePrefs({clipboardWatch:v})}/>
               <p className="tool-help">Автозбереження буфера вимкнено за замовчуванням. При ввімкненні нові записи відстежуються у Windows та зберігаються тільки в сесії, без запису на диск. У буфер можуть потрапити паролі й особисті дані.</p>
