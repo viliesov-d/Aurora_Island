@@ -1,136 +1,163 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-type CursorPosition = { x: number; y: number };
-type Side = "left" | "right" | "bottom" | "top";
-const clamp = (v:number, lo:number, hi:number) => Math.max(lo,Math.min(hi,v));
-const fmt=(n:number)=>n.toFixed(2);
+type Cursor = { x: number; y: number };
+type Side = "left" | "right" | "top" | "bottom";
+const limit = (n: number, low: number, high: number) => Math.max(low, Math.min(high, n));
+const smooth = (n: number) => n * n * (3 - 2 * n);
+const round = (n: number) => Math.round(n * 10) / 10;
 
-/**
- * A single rounded SVG silhouette draws the entire elastic outline, not a
- * disconnected "blob". The field follows the nearest side like Atoll's FlowGeometry.
- * It has no mouse hooks; native GetCursorPos only samples while the pill is visible.
- */
-function flowingPath(width:number,height:number,side:Side,cx:number,cy:number,pull:number) {
-  const w=width,h=height,r=Math.min(18,h*.41);
-  const b=Math.max(0,pull)*17;
-  const x=clamp(cx,r+54,w-r-54);
-  const y=clamp(cy,r+.5,h-r-.5);
-  const p:string[]=[];
-  const at=(a:number,b:number)=>fmt(a)+" "+fmt(b);
-  p.push("M",at(r,0));
-  if(side==="top"){
-    p.push("L",at(x-48,0));
-    p.push("C",at(x-19,0),at(x-18,-b),at(x,-b));
-    p.push("C",at(x+18,-b),at(x+19,0),at(x+48,0));
+/** A single continuous capsule path with tangent-connected curves. */
+export function magneticPath(w: number, h: number, side: Side, px: number, py: number, pull: number) {
+  const radius = h / 2;
+  const b = limit(pull, 0, 1.08) * 13;
+  const left = side === "left" ? b : 0;
+  const right = side === "right" ? b : 0;
+  const top = side === "top" ? b : 0;
+  const bottom = side === "bottom" ? b : 0;
+  const tx = limit(px, radius + 47, w - radius - 47);
+  const bx = limit(px, radius + 47, w - radius - 47);
+  const ry = limit(py, h * .38, h * .62);
+  const ly = limit(py, h * .38, h * .62);
+  const point = (x: number, y: number) => [round(x), round(y)].join(" ");
+  const p = ["M", point(radius, 0)];
+  if (top > .02) {
+    p.push("L", point(tx - 40, 0));
+    p.push("C", point(tx - 20, 0), point(tx - 19, -top), point(tx, -top));
+    p.push("C", point(tx + 19, -top), point(tx + 20, 0), point(tx + 40, 0));
   }
-  p.push("L",at(w-r,0),"Q",at(w,0),at(w,r));
-  if(side==="right"){
-    // A pill is only 44px high: deform its short semicircular end directly
-    // rather than drawing a long side segment that folds over itself.
-    p.push("C",at(w+b*.35,r),at(w+b,y-2),at(w+b,y));
-    p.push("C",at(w+b,y+2),at(w+b*.35,h-r),at(w,h-r));
-  }else p.push("L",at(w,h-r));
-  p.push("Q",at(w,h),at(w-r,h));
-  if(side==="bottom"){
-    p.push("L",at(x+52,h));
-    p.push("C",at(x+25,h),at(x+20,h+b),at(x,h+b));
-    p.push("C",at(x-20,h+b),at(x-25,h),at(x-52,h));
+  p.push("L", point(w - radius, 0));
+  p.push("C", point(w - radius * .25, 0),
+    point(w + right, ry * .20), point(w + right, ry));
+  p.push("C", point(w + right, ry + (h - ry) * .80),
+    point(w - radius * .25, h), point(w - radius, h));
+  if (bottom > .02) {
+    p.push("L", point(bx + 40, h));
+    p.push("C", point(bx + 20, h), point(bx + 19, h + bottom), point(bx, h + bottom));
+    p.push("C", point(bx - 19, h + bottom), point(bx - 20, h), point(bx - 40, h));
   }
-  p.push("L",at(r,h),"Q",at(0,h),at(0,h-r));
-  if(side==="left"){
-    p.push("C",at(-b*.35,h-r),at(-b,y+2),at(-b,y));
-    p.push("C",at(-b,y-2),at(-b*.35,r),at(0,r));
-  }else p.push("L",at(0,r));
-  p.push("Q",at(0,0),at(r,0),"Z");
+  p.push("L", point(radius, h));
+  p.push("C", point(radius * .25, h),
+    point(-left, ly + (h - ly) * .80), point(-left, ly));
+  p.push("C", point(-left, ly * .20),
+    point(radius * .25, 0), point(radius, 0), "Z");
   return p.join(" ");
 }
 
-export function useMagneticPill(enabled:boolean,expanded:boolean) {
-  const pillRef=useRef<HTMLDivElement>(null);
-  useEffect(()=>{
-    const el=pillRef.current;
-    if(!el) return;
-    const shape=el.querySelector<SVGPathElement>(".magnetic-shape");
-    const layer=el.querySelector<SVGSVGElement>(".magnetic-svg");
-    let alive=true;
-    let inFlight=false;
-    let pointer:CursorPosition|null=null;
-    let strength=0,velocity=0,last=0;
-    let raf=0;
-    let side:Side="bottom",px=0,py=0;
-    const reset=()=>{
-      if(layer) layer.style.opacity="0";
-      el.style.setProperty("--magnet-strength","0");
-      el.style.setProperty("--lens-x","50%");
-      el.style.setProperty("--lens-y","0%");
+function edgeDistance(side: Side, x: number, y: number, w: number, h: number) {
+  return side === "left" ? Math.abs(x) :
+    side === "right" ? Math.abs(x - w) :
+    side === "top" ? Math.abs(y) : Math.abs(y - h);
+}
+
+/**
+ * Stable cursor spring: one animation-frame integrator, one IPC pointer sample
+ * every 70ms, no React rerender and no redraw while idle.
+ */
+export function useMagneticPill(enabled: boolean, expanded: boolean) {
+  const pillRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const pill = pillRef.current;
+    const path = pill?.querySelector<SVGPathElement>(".magnetic-shape");
+    const svg = pill?.querySelector<SVGSVGElement>(".magnetic-svg");
+    if (!pill || !path || !svg) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let disposed = false, pending = false, frame = 0, lastFrame = 0;
+    let pointer: Cursor | null = null;
+    let side: Side = "right";
+    let strength = 0, velocity = 0;
+    let anchorX = 0, anchorY = 22;
+    let width = 0, height = 0;
+    const reset = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      svg.style.opacity = "0";
+      pill.style.setProperty("--magnet-strength", "0");
+      pill.style.setProperty("--lens-x", "50%");
+      pill.style.setProperty("--lens-y", "0%");
     };
-    if(!shape||!layer||!enabled||expanded||window.matchMedia("(prefers-reduced-motion: reduce)").matches){
-      reset();return;
-    }
-    const tick=(now:number)=>{
-      raf=0;
-      if(!alive||document.hidden)return;
-      const rect=el.getBoundingClientRect();
-      const w=rect.width,h=rect.height;
-      let desired=0;
-      if(pointer){
-        const dx=Math.max(rect.left-pointer.x,0,pointer.x-rect.right);
-        const dy=Math.max(rect.top-pointer.y,0,pointer.y-rect.bottom);
-        const distance=Math.hypot(dx,dy);
-        const range=170;
-        if(distance<range){
-          const k=clamp(1-distance/range,0,1);
-          desired=k*k*(3-2*k);
-          const x=pointer.x-rect.left,y=pointer.y-rect.top;
-          const edges=[
-            {s:"left" as const,d:Math.abs(x)},
-            {s:"right" as const,d:Math.abs(x-w)},
-            {s:"top" as const,d:Math.abs(y)},
-            {s:"bottom" as const,d:Math.abs(y-h)},
-          ];
-          side=edges.reduce((a,b)=>a.d<b.d?a:b).s;
-          px=clamp(x,0,w);py=clamp(y,0,h);
-          el.style.setProperty("--lens-x",fmt(clamp(x/w*100,0,100))+"%");
-          el.style.setProperty("--lens-y",fmt(clamp(y/h*100,0,100))+"%");
+    const render = (time: number) => {
+      frame = 0;
+      if (disposed || document.hidden || reduceMotion.matches) return;
+      const rect = pill.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      if (rect.width !== width || rect.height !== height) {
+        width = rect.width; height = rect.height;
+        svg.setAttribute("viewBox", "-20 -20 " + round(width + 40) + " " + round(height + 40));
+        anchorX = width / 2; anchorY = height / 2;
+      }
+      let desired = 0;
+      let targetX = anchorX, targetY = anchorY;
+      if (pointer) {
+        const x = pointer.x - rect.left, y = pointer.y - rect.top;
+        const dx = Math.max(-x, 0, x - width);
+        const dy = Math.max(-y, 0, y - height);
+        const outside = Math.hypot(dx, dy);
+        const isInside = dx === 0 && dy === 0;
+        if (!isInside && outside < 100) {
+          desired = smooth(1 - outside / 100);
+        } else if (isInside) {
+          const nearEdge = Math.min(x, width - x, y, height - y);
+          desired = .36 * smooth(1 - limit(nearEdge / 19, 0, 1));
         }
+        const sides: Side[] = ["left", "right", "top", "bottom"];
+        let closest = side;
+        for (const candidate of sides) {
+          if (edgeDistance(candidate, x, y, width, height) + 10 <
+              edgeDistance(closest, x, y, width, height)) closest = candidate;
+        }
+        side = closest; // Hysteresis prevents flicker near corners.
+        targetX = limit(x, 0, width);
+        targetY = limit(y, 0, height);
       }
-      const dt=last?Math.min(.04,(now-last)/1000):1/60;last=now;
-      // Stable semi-implicit spring with substeps for variable refresh rates.
-      const step=dt/Math.max(1,Math.ceil(dt/.006));
-      const n=Math.max(1,Math.ceil(dt/.006));
-      for(let i=0;i<n;i++){
-        velocity+=(210*(desired-strength)-27*velocity)*step;
-        strength+=velocity*step;
+      const dt = Math.min(.033, lastFrame ? (time - lastFrame) / 1000 : 1/60);
+      lastFrame = time;
+      const steps = Math.max(1, Math.ceil(dt / .008));
+      for (let i = 0; i < steps; i++) {
+        velocity += (250 * (desired - strength) - 30 * velocity) * dt / steps;
+        strength += velocity * dt / steps;
       }
-      if(Math.abs(desired-strength)<.003&&Math.abs(velocity)<.04){
-        strength=desired;velocity=0;
+      const response = 1 - Math.exp(-14 * dt);
+      anchorX += (targetX - anchorX) * response;
+      anchorY += (targetY - anchorY) * response;
+      if (Math.abs(desired - strength) < .002 && Math.abs(velocity) < .025) {
+        strength = desired; velocity = 0;
       }
-      const value=clamp(strength,0,1.12);
-      el.style.setProperty("--magnet-strength",fmt(value));
-      if(value>.002){
-        shape.setAttribute("d",flowingPath(w,h,side,px,py,value));
-        layer.setAttribute("viewBox","-22 -22 "+fmt(w+44)+" "+fmt(h+44));
-        layer.style.opacity=fmt(Math.min(1,value*.88));
-      }else{
-        layer.style.opacity="0";
+      const actual = limit(strength, 0, 1.08);
+      svg.style.opacity = actual < .006 ? "0" : String(Math.min(.84, actual));
+      if (actual >= .006) {
+        path.setAttribute("d", magneticPath(width, height, side, anchorX, anchorY, actual));
+        pill.style.setProperty("--lens-x", String(round(anchorX/width*100)) + "%");
+        pill.style.setProperty("--lens-y", String(round(anchorY/height*100)) + "%");
       }
-      if(value>.002||desired>.002||Math.abs(velocity)>.03)raf=requestAnimationFrame(tick);
+      pill.style.setProperty("--magnet-strength", String(round(actual)));
+      if (Math.abs(desired - strength) > .002 || Math.abs(velocity) > .025 ||
+          Math.abs(targetX - anchorX) > .8 || Math.abs(targetY - anchorY) > .8) {
+        frame = requestAnimationFrame(render);
+      }
     };
-    const schedule=()=>{if(!raf&&alive)raf=requestAnimationFrame(tick)};
-    const poll=async()=>{
-      if(!alive||inFlight||document.hidden)return;
-      inFlight=true;
-      try{
-        pointer=await invoke<CursorPosition|null>("cursor_position");
-      }catch{pointer=null}
-      finally{inFlight=false;schedule()}
+    const poll = async () => {
+      if (disposed || pending || document.hidden || reduceMotion.matches) return;
+      pending = true;
+      try {
+        pointer = await invoke<Cursor | null>("cursor_position");
+      } catch { pointer = null; }
+      finally {
+        pending = false;
+        if (!disposed && !frame) frame = requestAnimationFrame(render);
+      }
     };
+    const onVisibility = () => { if (document.hidden) reset(); else void poll(); };
+    if (!enabled || expanded || reduceMotion.matches) { reset(); return; }
     void poll();
-    const id=window.setInterval(()=>void poll(),85);
-    return()=>{
-      alive=false;window.clearInterval(id);if(raf)cancelAnimationFrame(raf);reset();
+    const interval = window.setInterval(() => void poll(), 70);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      reset();
     };
-  },[enabled,expanded]);
+  }, [enabled, expanded]);
   return pillRef;
 }
