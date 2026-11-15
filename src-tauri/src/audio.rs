@@ -29,14 +29,19 @@ mod native {
     use windows::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
     use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CoIncrementMTAUsage, CLSCTX_ALL, COINIT_MULTITHREADED,
     };
 
     static MEDIA_MANAGER: OnceLock<GlobalSystemMediaTransportControlsSessionManager> = OnceLock::new();
+    static MTA_READY: OnceLock<Result<(), String>> = OnceLock::new();
 
     async fn manager() -> Result<GlobalSystemMediaTransportControlsSessionManager, String> {
         if let Some(cached) = MEDIA_MANAGER.get() { return Ok(cached.clone()); }
-        windows::core::init_mta().map_err(|e| e.to_string())?;
+        // Keep the process-wide COM MTA active for agile WinRT media sessions.
+        // windows-core 0.62 does not expose init_mta, so use the Win32 equivalent.
+        MTA_READY.get_or_init(|| unsafe { CoIncrementMTAUsage() }
+            .map(|_cookie| ())
+            .map_err(|e| e.to_string())).clone()?;
         let created = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
             .map_err(|e| e.to_string())?
             .await.map_err(|e| e.to_string())?;
