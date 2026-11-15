@@ -72,6 +72,7 @@ Implemented:
 - Autosaved plain-text note.
 - User-selected weather city with live temperature/wind via Open-Meteo. Weather requests require internet access.
 - Local quick-links collection, with an HTTPS/HTTP scheme allowlist.
+- In-window command palette with calculator, distance/mass/temperature conversions, in-app search and AI handoff. Ctrl+K works while the app has keyboard focus; system-wide Alt+Space is not yet available.
 - Reminders stored locally with in-app due-time alerts while the app stays running.
 
 Already implemented before this milestone: 4 themes, pill open/close, repositioning, battery, timer, secure API key, AI chat, SMTC music and Core Audio volume.
