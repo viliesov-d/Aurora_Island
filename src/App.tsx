@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerE
 import { AnimatePresence, motion } from "motion/react";
 const ReactMarkdown = lazy(() => import("react-markdown"));
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
+import { LogicalSize, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Battery, BatteryCharging, Bot, ChevronDown, Command, ExternalLink, Grip, MessageCircle, Minus, Pause, Play, Plus, Send, Settings2, ShieldCheck, Sparkles, Timer, Music2, X } from "lucide-react";
@@ -58,7 +58,7 @@ export default function App() {
       const previous=await w.outerSize();
       const position=await w.outerPosition();
       const frameWidth=open?568:pillWidth+32;
-      const monitor=await w.currentMonitor();
+      const monitor=await currentMonitor();
       const availableHeight=monitor
         ? (monitor.size.height-(position.y-monitor.position.y)-22)/scale
         : 710;
