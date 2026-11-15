@@ -123,3 +123,9 @@
 
 /* Match panel layout to the 430px native expanded window, not the folded pill. */
 .island .panel{width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 66px)}
+
+.tool-command-action{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border-radius:11px;padding:10px;background:#ffffff0d;border:1px solid #ffffff0f;color:inherit}
+.tool-command-action:hover{background:#ffffff22}
+.tool-command-action span{display:flex;flex-direction:column;gap:4px}
+.tool-command-action small{color:#9f9eb3;font-size:10px}
+.reminder-due{border-color:#c89b6280;background:#bd99501d}
