@@ -10,6 +10,7 @@ import { defaults, type Message, type Preferences, type Tab, type Theme } from "
 import { MediaPane, type MediaState, type VolumeState } from "./MediaPane";
 import { Toolbox } from "./Toolbox";
 import { CommandPalette } from "./CommandPalette";
+import { useClipboardWatcher, useReminderNotifications, showWindowsNotification } from "./nativeIntegration";
 
 const themeNames: Record<Theme,string> = { classic:"Classic", glass:"Liquid Glass", soft:"Soft Minimal", neon:"Neon" };
 const initialMessages: Message[] = [{ role:"assistant", content:"Привіт! Я Aurora AI. Додайте власний OpenAI API key у налаштуваннях чату, щоб почати." }];
@@ -30,6 +31,8 @@ function readMessages(): Message[] { try { return JSON.parse(localStorage.getIte
 
 export default function App() {
   const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false); const [tab,setTab]=useState<Tab>("home");
+  useClipboardWatcher(prefs.clipboardWatch);
+  useReminderNotifications(prefs.notifications);
   const [battery,setBattery]=useState<{batteryPercent:number|null;charging:boolean|null}|null>(null); const [messages,setMessages]=useState<Message[]>(readMessages); const [draft,setDraft]=useState(""); const [busy,setBusy]=useState(false); const [hasKey,setHasKey]=useState(false); const [apiKey,setApiKey]=useState(""); const [seconds,setSeconds]=useState(300); const [timerOn,setTimerOn]=useState(false); const [error,setError]=useState("");
   const [media,setMedia]=useState<MediaState|null>(null);
   const [volume,setVolume]=useState<VolumeState|null>(null);
@@ -97,6 +100,26 @@ export default function App() {
   },[]);
   useEffect(()=>{invoke<{batteryPercent:number|null;charging:boolean|null}>("system_info").then(setBattery).catch(()=>{});const id=window.setInterval(()=>invoke<{batteryPercent:number|null;charging:boolean|null}>("system_info").then(setBattery).catch(()=>{}),60000);return()=>clearInterval(id)},[]);
   useEffect(()=>{invoke<boolean>("has_api_key").then(setHasKey).catch(()=>{});},[]);
+  useEffect(()=>{
+    let cancelled=false;
+    invoke("set_global_hotkey",{enabled:prefs.globalHotkey}).catch(e=>{
+      if(!cancelled)setError(`Глобальна клавіша: ${String(e)}`);
+    });
+    return()=>{cancelled=true};
+  },[prefs.globalHotkey]);
+  useEffect(()=>{
+    let active=true;
+    let unlisten:(()=>void)|undefined;
+    listen("aurora:open-commands",()=>{
+      if(!active)return;
+      window.clearTimeout(hoverTimer.current);
+      window.clearTimeout(leaveTimer.current);
+      skipHover.current=true;
+      setTab("commands");
+      setExpanded(true);
+    }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(console.warn);
+    return()=>{active=false;unlisten?.()};
+  },[]);
   const refreshMedia=useCallback(async()=>{
     try { const next=await invoke<MediaState>("media_state"); setMedia(next); setAudioError(""); }
     catch(e){setMedia(null);setAudioError(`Медіаплеєр: ${String(e)}`);}
@@ -149,12 +172,14 @@ export default function App() {
     const tick=()=>{
       const remaining=Math.max(0,Math.ceil(((timerDeadline.current??Date.now())-Date.now())/1000));
       setSeconds(remaining);
-      if(remaining===0){setTimerOn(false);timerDeadline.current=null;}
+      if(remaining===0){setTimerOn(false);timerDeadline.current=null;
+        if(prefs.notifications)void showWindowsNotification("Aurora Island","Таймер завершився").catch(console.warn);
+      }
     };
     tick();
     const id=window.setInterval(tick,250);
     return()=>clearInterval(id);
-  },[timerOn]);
+  },[timerOn,prefs.notifications]);
   const toggleTimer=()=>{
     if(timerOn){setTimerOn(false);timerDeadline.current=null;return;}
     const duration=seconds||300;
@@ -234,7 +259,12 @@ export default function App() {
           {tab==="chat"&&<div className="chat-view"><div className="chat-topline"><span><ShieldCheck size={14}/> API-ключ захищений DPAPI</span><label className="attach-btn">Прикріпити файл<input type="file" accept=".txt,.md,.json,.csv,.log,.yaml,.yml,.xml" onChange={e=>attachText(e.target.files?.[0])}/></label></div><div className="messages">{messages.map((m,i)=><div className={`message ${m.role}`} key={i}><div className="avatar">{m.role==="assistant"?<Sparkles size={14}/>:"Я"}</div><div className="bubble">{m.role==="assistant"?<Suspense fallback={m.content}><ReactMarkdown>{m.content|| (busy&&i===messages.length-1?"Думаю…":"")}</ReactMarkdown></Suspense>:m.content}</div></div>)}<div ref={chatEnd}/></div>{error&&<div className="error-msg">{error}</div>}<form className="composer" onSubmit={e=>{e.preventDefault();void sendMessage()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void sendMessage()}}} placeholder="Напишіть повідомлення…"/><button type="submit" disabled={busy||!draft.trim()} aria-label="Надіслати"><Send size={16}/></button></form><div className="chat-foot">Відповіді надходять через офіційний OpenAI API · модель GPT-4.1 mini</div></div>}
           {tab==="settings"&&<div className="settings-view"><div className="settings-section"><div className="section-title">ОФОРМЛЕННЯ</div><div className="theme-grid">{(Object.keys(themeNames) as Theme[]).map(t=><button key={t} className={`theme-option ${prefs.theme===t?"selected":""}`} onClick={()=>updatePrefs({theme:t})}><span className={`theme-preview preview-${t}`}><i/></span><span>{themeNames[t]}</span></button>)}</div><Slider label="Ширина острова" value={prefs.width} min={240} max={340} suffix=" px" onChange={v=>updatePrefs({width:v})}/><Slider label="Заокруглення" value={prefs.radius} min={18} max={38} suffix=" px" onChange={v=>updatePrefs({radius:v})}/><Slider label="Прозорість" value={prefs.opacity} min={35} max={100} suffix="%" onChange={v=>updatePrefs({opacity:v})}/><label className="color-row">Акцентний колір<input type="color" value={prefs.accent} onChange={e=>updatePrefs({accent:e.target.value})}/></label>{prefs.theme==="glass"&&<><Slider label="Розмиття фону" value={prefs.blur} min={0} max={24} suffix=" px" onChange={v=>updatePrefs({blur:v})}/><Slider label="Інтенсивність скла" value={prefs.glass} min={10} max={100} suffix="%" onChange={v=>updatePrefs({glass:v})}/></>}<Slider label="Швидкість анімації" value={prefs.speed} min={35} max={140} suffix="%" onChange={v=>updatePrefs({speed:v})}/></div>
             <div className="settings-section"><div className="section-title">МОДУЛІ</div><Toggle label="Годинник" checked={prefs.modules.clock} onChange={v=>updatePrefs({modules:{...prefs.modules,clock:v}})}/><Toggle label="Батарея (Windows API)" checked={prefs.modules.battery} onChange={v=>updatePrefs({modules:{...prefs.modules,battery:v}})}/><Toggle label="Таймер" checked={prefs.modules.timer} onChange={v=>updatePrefs({modules:{...prefs.modules,timer:v}})}/><Toggle label="Керування музикою (SMTC)" checked={prefs.modules.media} onChange={v=>updatePrefs({modules:{...prefs.modules,media:v}})}/><Toggle label="Системна гучність" checked={prefs.modules.volume} onChange={v=>updatePrefs({modules:{...prefs.modules,volume:v}})}/></div>
-            <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/><Toggle label="Запускати з Windows" checked={prefs.startup} onChange={v=>{invoke("set_startup",{enabled:v}).then(()=>updatePrefs({startup:v})).catch(e=>setError(String(e)))}}/><div className="openai-key"><div><b>OpenAI API key</b><span>{hasKey?"Ключ зашифрований для вашого облікового запису Windows":"Зберігається через Windows DPAPI"}</span></div><div className="key-row"><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-…"/><button onClick={()=>void saveKey()} disabled={!apiKey}>Зберегти</button></div>{error&&<div className="error-msg">{error}</div>}</div></div>
+            <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
+              <Toggle label="Глобальна клавіша Ctrl+Alt+Space" checked={prefs.globalHotkey} onChange={v=>updatePrefs({globalHotkey:v})}/>
+              <Toggle label="Автоматична історія буфера обміну" checked={prefs.clipboardWatch} onChange={v=>updatePrefs({clipboardWatch:v})}/>
+              <p className="tool-help">Автозбереження буфера вимкнено за замовчуванням. При ввімкненні нові записи відстежуються у Windows та зберігаються тільки в сесії, без запису на диск. У буфер можуть потрапити паролі й особисті дані.</p>
+              <Toggle label="Сповіщення Windows (таймер і нагадування)" checked={prefs.notifications} onChange={v=>updatePrefs({notifications:v})}/>
+              {prefs.notifications&&<button className="native-test" onClick={()=>void showWindowsNotification("Aurora Island","Системні сповіщення увімкнені").catch(e=>setError(String(e)))}>Перевірити сповіщення</button>}<Toggle label="Запускати з Windows" checked={prefs.startup} onChange={v=>{invoke("set_startup",{enabled:v}).then(()=>updatePrefs({startup:v})).catch(e=>setError(String(e)))}}/><div className="openai-key"><div><b>OpenAI API key</b><span>{hasKey?"Ключ зашифрований для вашого облікового запису Windows":"Зберігається через Windows DPAPI"}</span></div><div className="key-row"><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-…"/><button onClick={()=>void saveKey()} disabled={!apiKey}>Зберегти</button></div>{error&&<div className="error-msg">{error}</div>}</div></div>
           </div>}
         </div>
         <footer className="panel-footer"><span><span className="footer-mark"><Sparkles size={11}/></span> AURORA ISLAND <span className="footer-version">v0.1 · Windows</span></span><span>Перетягніть острів, щоб змінити позицію</span></footer>
