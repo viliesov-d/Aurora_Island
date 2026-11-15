@@ -60,6 +60,8 @@ export default function App() {
   const layoutQueue=useRef<Promise<void>>(Promise.resolve());
   const collapseResizeTimer=useRef<number|undefined>(undefined);
   const initializedLayout=useRef(false);
+  const openingWindow=useRef(false);
+  const transitionToken=useRef(0);
   const restoredPosition=useRef(false);
   const chatEnd=useRef<HTMLDivElement>(null);
   const dragAnchor=useRef<{x:number;y:number;at:number}|null>(null);
@@ -121,8 +123,25 @@ export default function App() {
     window.clearTimeout(hoverTimer.current);
     window.clearTimeout(leaveTimer.current);
     skipHover.current=!open;
-    if(open&&hidden)setHidden(false);
-    setExpanded(open);
+    if(open&&(openingWindow.current||expanded))return;
+    const token=++transitionToken.current;
+    if(!open){
+      openingWindow.current=false;
+      setExpanded(false);
+      return;
+    }
+    openingWindow.current=true;
+    if(hidden)setHidden(false);
+    // Expand the native window first, then start CSS morphing at full size.
+    void resizeWindow(true,prefs.width,prefs.radius,false).then(()=>{
+      if(transitionToken.current===token){
+        openingWindow.current=false;
+        setExpanded(true);
+      }
+    }).catch(err=>{
+      openingWindow.current=false;
+      setError(`Помилка розгортання острова: ${String(err)}`);
+    });
   };
   const hideToHandle=()=>{
     window.clearTimeout(hoverTimer.current);
@@ -150,14 +169,15 @@ export default function App() {
     window.clearTimeout(collapseResizeTimer.current);
     const recovering=wasHidden.current&&!hidden;
     wasHidden.current=hidden;
+    if(openingWindow.current&&!hidden&&!expanded)return;
     if(hidden||recovering||expanded||!initializedLayout.current){
       initializedLayout.current=true;
       void resizeWindow(expanded,prefs.width,prefs.radius,hidden);
     }else{
-      // Atoll waits until the spring finishes before shrinking the native region.
+      // Allow the shell spring to settle before shrinking the native hit region.
       collapseResizeTimer.current=window.setTimeout(()=>{
-        void resizeWindow(false,prefs.width,prefs.radius);
-      },350);
+        if(!openingWindow.current)void resizeWindow(false,prefs.width,prefs.radius);
+      },540);
     }
     return()=>window.clearTimeout(collapseResizeTimer.current);
   },[expanded,hidden,prefs.width,prefs.radius,resizeWindow]);
@@ -201,7 +221,7 @@ export default function App() {
       skipHover.current=true;
       setHidden(false);
       setTab("commands");
-      setExpanded(true);
+      invokeMode(true);
     }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(console.warn);
     return()=>{active=false;unlisten?.()};
   },[]);
@@ -286,7 +306,7 @@ export default function App() {
   },[]);
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{
     if(e.key==="Escape"&&expanded){e.preventDefault();setExpanded(false)}
-    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setHidden(false);setTab("commands");setExpanded(true)}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setHidden(false);setTab("commands");invokeMode(true)}
   };window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[expanded]);
   const scheduleExpand=()=>{
     window.clearTimeout(leaveTimer.current);
@@ -358,7 +378,7 @@ export default function App() {
 
   return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
-      <motion.div layout="size" className="island-morph" transition={{type:"spring",stiffness:335,damping:30,mass:.95}} aria-hidden="true" />
+      <motion.div layout="size" className="island-morph" transition={{type:"spring",stiffness:255,damping:27,mass:1}} aria-hidden="true" />
       {hidden?<button className="island-restore" onPointerEnter={restoreFromHandle} onClick={restoreFromHandle} aria-label="Повернути Aurora Island" title="Повернути Aurora Island"><span/></button>:<>
       <div ref={pillRef} className="pill" onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}
         onPointerDown={e=>{if(e.target===e.currentTarget)beginDrag(e)}} onPointerMove={moveDrag}
@@ -380,7 +400,7 @@ export default function App() {
           <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={smartToggle}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
         </div>
       </div>
-      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" onPointerLeave={scheduleCollapse} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
+      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" onPointerLeave={scheduleCollapse} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{duration:.32,ease:[.22,1,.36,1]}}>
         <header className="panel-head" onPointerDown={e=>{if(!(e.target as HTMLElement).closest("button, input, textarea, a"))beginDrag(e)}} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Сховати до смужки" onClick={hideToHandle}><ChevronUp size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
         <nav className="tabs"><button className={tab==="home"?"active":""} onClick={()=>setTab("home")}><Command size={15}/> Огляд</button>{(prefs.modules.media||prefs.modules.volume)&&<button className={tab==="media"?"active":""} onClick={()=>setTab("media")}><Music2 size={15}/> Музика</button>}<button className={tab==="chat"?"active":""} onClick={()=>setTab("chat")}><MessageCircle size={15}/> AI чат</button><button className={tab==="tools"?"active":""} onClick={()=>setTab("tools")}><Command size={15}/> Інструменти</button><button className={tab==="commands"?"active":""} onClick={()=>setTab("commands")}><Command size={15}/> Пошук</button><button className={tab==="settings"?"active":""} onClick={()=>setTab("settings")}><Settings2 size={15}/> Налаштування</button></nav>
         <div className="panel-body">

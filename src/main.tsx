@@ -4,5 +4,6 @@ import App from "./App";
 import "./styles.css";
 import "./visual-refresh.css";
 import "./atoll-mechanics.css";
+import "./window-polish.css";
 
 createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);

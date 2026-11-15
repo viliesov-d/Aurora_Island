@@ -182,6 +182,7 @@ fn set_native_region(
             }
         }
     }
+    #[cfg(windows)] appearance::ensure_borderless(&window)?;
     #[cfg(not(windows))]
     {
         let _ = (window, expanded, pill_width, radius, hidden);
@@ -239,6 +240,9 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
                 let _ = window.set_decorations(false);
+                #[cfg(windows)] if let Err(err) = appearance::ensure_borderless(&window) {
+                    eprintln!("Aurora borderless setup: {err}");
+                }
                 if let Ok(Some(monitor)) = window.primary_monitor() {
                     if let Ok(scale) = window.scale_factor() {
                         let msize = monitor.size(); let mpos = monitor.position();
