@@ -27,7 +27,8 @@ function loadPrefs(): Preferences {
       ...saved,
       width: Math.min(340, Math.max(240, Number(saved.width) || defaults.width)),
       opacity: Math.min(100, Math.max(35, Number(saved.opacity) || defaults.opacity)),
-      blur: Math.min(30, Math.max(0, Number(saved.blur) || 0))
+      blur: Math.min(30, Math.max(0, Number(saved.blur) || 0)),
+      hoverExpand: false
     };
   } catch { return defaults; }
 }
@@ -144,6 +145,7 @@ export default function App() {
     });
   };
 
+  const invokeModeRef=useRef(invokeMode);invokeModeRef.current=invokeMode;
   const hideToHandle=()=>{
     ++transitionToken.current;
     openingWindow.current=false;
@@ -230,9 +232,8 @@ export default function App() {
       if(!active)return;
       window.clearTimeout(hoverTimer.current);
       window.clearTimeout(leaveTimer.current);
-      setHidden(false);
       setTab("commands");
-      invokeMode(true);
+      invokeModeRef.current(true);
     }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(console.warn);
     return()=>{active=false;unlisten?.()};
   },[]);
@@ -315,7 +316,6 @@ export default function App() {
     listen<string>("chat:delta",e=>setMessages(m=>{if(!m.length||m[m.length-1].role!=="assistant")return [...m,{role:"assistant",content:e.payload}];return [...m.slice(0,-1),{...m[m.length-1],content:m[m.length-1].content+e.payload}]})).then(f=>unlisten=f);
     return()=>unlisten?.();
   },[]);
-  const invokeModeRef=useRef(invokeMode);invokeModeRef.current=invokeMode;
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{
     if(e.key==="Escape"&&expanded){e.preventDefault();invokeModeRef.current(false)}
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){
@@ -380,7 +380,11 @@ export default function App() {
 
   return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`} style={{"--morph-duration":`${morphMs}ms`} as CSSProperties}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
-      <div className="island-morph" aria-hidden="true" />
+      <div className="island-morph" aria-hidden="true">
+        <span className="morph-layer morph-compact"/>
+        <span className="morph-layer morph-full"/>
+        <span className="morph-rim"/>
+      </div>
       {hidden?<button className="island-restore" onClick={restoreFromHandle} aria-label="Повернути Aurora Island" title="Повернути Aurora Island"><span/></button>:<>
       <div ref={pillRef} className="pill"
         onPointerDown={e=>{if(e.target===e.currentTarget)beginDrag(e)}} onPointerMove={moveDrag}
