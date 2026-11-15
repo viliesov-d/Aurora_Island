@@ -1,16 +1,18 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "motion/react";
 const ReactMarkdown = lazy(() => import("react-markdown"));
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Battery, BatteryCharging, Bot, ChevronDown, Command, ExternalLink, Grip, MessageCircle, Minus, Pause, Play, Plus, Send, Settings2, ShieldCheck, Sparkles, Timer, Music2, X } from "lucide-react";
+import { Battery, BatteryCharging, Bot, ChevronDown, ChevronUp, Command, ExternalLink, Grip, MessageCircle, Minus, Pause, Play, Plus, Send, Settings2, ShieldCheck, Sparkles, Timer, Music2, X } from "lucide-react";
 import { defaults, type Message, type Preferences, type Tab, type Theme } from "./types";
 import { MediaPane, type MediaState, type VolumeState } from "./MediaPane";
 import { Toolbox } from "./Toolbox";
 import { CommandPalette } from "./CommandPalette";
 import { useMagneticPill } from "./useMagneticPill";
+import { useOutsideCollapse } from "./useOutsideCollapse";
+import { CompactActivity, useLiveActivity, activityIcons, type Activity } from "./LiveActivity";
 import { useClipboardWatcher, useReminderNotifications, showWindowsNotification } from "./nativeIntegration";
 
 const themeNames: Record<Theme,string> = { classic:"Classic", glass:"Liquid Glass", soft:"Soft Minimal", neon:"Neon" };
@@ -32,9 +34,13 @@ function readMessages(): Message[] { try { return JSON.parse(localStorage.getIte
 
 export default function App() {
   const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false); const [tab,setTab]=useState<Tab>("home");
+  const [hidden,setHidden]=useState(()=>{try{return localStorage.getItem("aurora:hidden")==="true"}catch{return false}});
+  const hiddenLatest=useRef(hidden); hiddenLatest.current=hidden;
+  const wasHidden=useRef(hidden);
+  const [toast,setToast]=useState<string|null>(null);
   useClipboardWatcher(prefs.clipboardWatch);
   useReminderNotifications(prefs.notifications);
-  const pillRef = useMagneticPill(prefs.cursorPull, expanded);
+  const pillRef = useMagneticPill(prefs.cursorPull&&!hidden, expanded);
   const [battery,setBattery]=useState<{batteryPercent:number|null;charging:boolean|null}|null>(null); const [messages,setMessages]=useState<Message[]>(readMessages); const [draft,setDraft]=useState(""); const [busy,setBusy]=useState(false); const [hasKey,setHasKey]=useState(false); const [apiKey,setApiKey]=useState(""); const [seconds,setSeconds]=useState(300); const [timerOn,setTimerOn]=useState(false); const [error,setError]=useState("");
   const [media,setMedia]=useState<MediaState|null>(null);
   const [volume,setVolume]=useState<VolumeState|null>(null);
@@ -50,19 +56,22 @@ export default function App() {
   const initializedLayout=useRef(false);
   const restoredPosition=useRef(false);
   const chatEnd=useRef<HTMLDivElement>(null);
+  const dragAnchor=useRef<{x:number;y:number;at:number}|null>(null);
+  const suppressClick=useRef(false);
+  const timerInitial=useRef(300);
   // Serializing layout mutations prevents stale window regions after rapid toggles.
-  const resizeWindow=useCallback((open:boolean, pillWidth:number, radius:number)=>{
+  const resizeWindow=useCallback((open:boolean, pillWidth:number, radius:number, hide=false)=>{
     layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
       const w=getCurrentWindow();
       const scale=await w.scaleFactor();
       const previous=await w.outerSize();
       const position=await w.outerPosition();
-      const frameWidth=open?568:pillWidth+32;
+      const frameWidth=hide?184:open?568:pillWidth+32;
       const monitor=await currentMonitor();
       const availableHeight=monitor
         ? (monitor.size.height-(position.y-monitor.position.y)-22)/scale
         : 710;
-      const frameHeight=open?Math.max(390,Math.min(710,availableHeight)):64;
+      const frameHeight=hide?40:open?Math.max(390,Math.min(710,availableHeight)):64;
       let x=Math.round(position.x+(previous.width-frameWidth*scale)/2);
       let y=position.y;
       if(!restoredPosition.current){
@@ -75,6 +84,19 @@ export default function App() {
           }
         } catch { /* Ignore invalid position data. */ }
       }
+      if(hide){
+        try { const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
+          if(Number.isFinite(saved?.centerX))x=Math.round(saved.centerX-frameWidth*scale/2);
+        }catch{}
+        y=monitor?.position.y??0;
+      }else if(previous.height<=Math.round(45*scale)){
+        // Restore the exact position held before the strip was shown.
+        try { const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
+          if(Number.isFinite(saved?.centerX)&&Number.isFinite(saved?.y)){
+            x=Math.round(saved.centerX-frameWidth*scale/2); y=Math.round(saved.y);
+          }
+        }catch{}
+      }
       if(open&&monitor){
         const minX=monitor.position.x+4;
         const maxX=monitor.position.x+monitor.size.width-Math.round(frameWidth*scale)-4;
@@ -85,7 +107,7 @@ export default function App() {
       }
       await w.setSize(new LogicalSize(frameWidth,frameHeight));
       await w.setPosition(new PhysicalPosition(x,y));
-      await invoke("set_native_region",{expanded:open,pillWidth,radius});
+      await invoke("set_native_region",{expanded:open,pillWidth,radius,hidden:hide});
     }).catch(err=>{ console.warn("Aurora layout update failed",err); });
     return layoutQueue.current;
   },[]);
@@ -93,23 +115,45 @@ export default function App() {
     window.clearTimeout(hoverTimer.current);
     window.clearTimeout(leaveTimer.current);
     skipHover.current=!open;
+    if(open&&hidden)setHidden(false);
     setExpanded(open);
   };
+  const hideToHandle=()=>{
+    window.clearTimeout(hoverTimer.current);
+    window.clearTimeout(leaveTimer.current);
+    skipHover.current=true;
+    setExpanded(false);
+    setHidden(true);
+  };
+  const restoreFromHandle=()=>{
+    setHidden(false);
+    skipHover.current=true;
+    setExpanded(false);
+  };
+  useOutsideCollapse(expanded&&!hidden,prefs.autoHide,()=>invokeMode(false));
+  useEffect(()=>{try{localStorage.setItem("aurora:hidden",String(hidden))}catch{}},[hidden]);
+  useEffect(()=>{
+    if(!toast)return;
+    const id=window.setTimeout(()=>setToast(null),4600);
+    return()=>window.clearTimeout(id);
+  },[toast]);
   const updatePrefs=(next:Partial<Preferences>)=>setPrefs(p=>({...p,...next}));
   useEffect(()=>{localStorage.setItem("aurora:prefs",JSON.stringify(prefs));document.documentElement.dataset.theme=prefs.theme;document.documentElement.style.setProperty("--pill-width",`${prefs.width}px`);document.documentElement.style.setProperty("--glass-blur",`${prefs.blur}px`);document.documentElement.style.setProperty("--glass-strength",String(prefs.glass/100));document.documentElement.style.setProperty("--motion-speed",`${prefs.speed/100}`);document.documentElement.style.setProperty("--surface-opacity",String(prefs.opacity/100));document.documentElement.style.setProperty("--island-radius",`${prefs.radius}px`);document.documentElement.style.setProperty("--accent",prefs.accent);},[prefs]);
   useEffect(()=>{
     window.clearTimeout(collapseResizeTimer.current);
-    if(expanded || !initializedLayout.current){
+    const recovering=wasHidden.current&&!hidden;
+    wasHidden.current=hidden;
+    if(hidden||recovering||expanded||!initializedLayout.current){
       initializedLayout.current=true;
-      void resizeWindow(expanded,prefs.width,prefs.radius);
+      void resizeWindow(expanded,prefs.width,prefs.radius,hidden);
     }else{
-      // Let the exit animation finish before shrinking the native hit region.
+      // Atoll waits until the spring finishes before shrinking the native region.
       collapseResizeTimer.current=window.setTimeout(()=>{
         void resizeWindow(false,prefs.width,prefs.radius);
-      },310);
+      },350);
     }
     return()=>window.clearTimeout(collapseResizeTimer.current);
-  },[expanded,prefs.width,prefs.radius,resizeWindow]);
+  },[expanded,hidden,prefs.width,prefs.radius,resizeWindow]);
   useEffect(()=>{
     void invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
       console.warn("Native Acrylic material is not available on this Windows build",err);
@@ -125,7 +169,7 @@ export default function App() {
       saveTimer=window.setTimeout(async()=>{
         try {
           const [p,size]=await Promise.all([w.outerPosition(),w.outerSize()]);
-          if(active)localStorage.setItem("aurora:position",JSON.stringify({centerX:p.x+size.width/2,y:p.y}));
+          if(active&&!hiddenLatest.current)localStorage.setItem("aurora:position",JSON.stringify({centerX:p.x+size.width/2,y:p.y}));
         } catch { /* Never block the UI on location persistence. */ }
       },650);
     }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(()=>{});
@@ -148,6 +192,7 @@ export default function App() {
       window.clearTimeout(hoverTimer.current);
       window.clearTimeout(leaveTimer.current);
       skipHover.current=true;
+      setHidden(false);
       setTab("commands");
       setExpanded(true);
     }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(console.warn);
@@ -205,7 +250,7 @@ export default function App() {
     const tick=()=>{
       const remaining=Math.max(0,Math.ceil(((timerDeadline.current??Date.now())-Date.now())/1000));
       setSeconds(remaining);
-      if(remaining===0){setTimerOn(false);timerDeadline.current=null;
+      if(remaining===0){setTimerOn(false);timerDeadline.current=null;setToast("Таймер завершився");
         if(prefs.notifications)void showWindowsNotification("Aurora Island","Таймер завершився").catch(console.warn);
       }
     };
@@ -217,6 +262,7 @@ export default function App() {
     if(timerOn){setTimerOn(false);timerDeadline.current=null;return;}
     const duration=seconds||300;
     if(!seconds)setSeconds(duration);
+    timerInitial.current=duration;
     timerDeadline.current=Date.now()+duration*1000;
     setTimerOn(true);
   };
@@ -231,19 +277,20 @@ export default function App() {
     listen<string>("chat:delta",e=>setMessages(m=>{if(!m.length||m[m.length-1].role!=="assistant")return [...m,{role:"assistant",content:e.payload}];return [...m.slice(0,-1),{...m[m.length-1],content:m[m.length-1].content+e.payload}]})).then(f=>unlisten=f);
     return()=>unlisten?.();
   },[]);
-  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setTab("commands");setExpanded(true)}};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[]);
+  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{
+    if(e.key==="Escape"&&expanded){e.preventDefault();setExpanded(false)}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setHidden(false);setTab("commands");setExpanded(true)}
+  };window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[expanded]);
   const scheduleExpand=()=>{
     window.clearTimeout(leaveTimer.current);
-    if(expanded||!prefs.hoverExpand||skipHover.current)return;
+    if(hidden||expanded||!prefs.hoverExpand||skipHover.current)return;
     window.clearTimeout(hoverTimer.current);
-    hoverTimer.current=window.setTimeout(()=>{if(!skipHover.current)invokeMode(true)},650);
+    hoverTimer.current=window.setTimeout(()=>{if(!skipHover.current)invokeMode(true)},120);
   };
   const scheduleCollapse=()=>{
     window.clearTimeout(hoverTimer.current);
     skipHover.current=false;
-    if(!prefs.autoHide||!expanded||tab!=="home")return;
-    window.clearTimeout(leaveTimer.current);
-    leaveTimer.current=window.setTimeout(()=>invokeMode(false),1400);
+    // Native desktop watcher handles close from outside without losing text focus.
   };
   const sendMessage=async()=>{const text=draft.trim();if(!text||busy)return;setError("");setDraft("");const next=[...messages,{role:"user" as const,content:text}];setMessages([...next,{role:"assistant",content:""}]);setBusy(true);
     try { await invoke("stream_chat",{messages:next,model:"gpt-4.1-mini"}); }
@@ -252,13 +299,25 @@ export default function App() {
   };
   const saveKey=async()=>{try{await invoke("save_api_key",{key:apiKey});setHasKey(true);setApiKey("");setError("")}catch(e){setError(String(e))}};
   const attachText=async(file?:File)=>{if(!file)return;if(file.size>256*1024){setError("Файл завеликий. Максимум 256 КБ.");return}try{const content=await file.text();setDraft(v=>`${v}${v?"\n\n":""}[Вміст файлу ${file.name}]\n${content}`)}catch{setError("Не вдалося прочитати текстовий файл.")}};
-  const startDrag=(e:ReactPointerEvent)=>{
-    if(e.button!==0)return;
-    window.clearTimeout(hoverTimer.current);
-    window.clearTimeout(leaveTimer.current);
-    skipHover.current=true;
-    void getCurrentWindow().startDragging().catch(err=>setError(String(err)));
+  const beginDrag=(e:ReactPointerEvent)=>{
+    if(e.button!==0||hidden||expanded)return;
+    dragAnchor.current={x:e.clientX,y:e.clientY,at:performance.now()};
+    suppressClick.current=false;
   };
+  const moveDrag=(e:ReactPointerEvent)=>{
+    const start=dragAnchor.current;
+    if(!start||(e.buttons&1)===0||prefs.lockPosition)return;
+    const dx=e.clientX-start.x,dy=e.clientY-start.y,dt=Math.max(16,performance.now()-start.at);
+    if(dy<-22&&Math.abs(dx)<46&&dy/dt<-.65){
+      dragAnchor.current=null;suppressClick.current=true;hideToHandle();
+    }else if(Math.hypot(dx,dy)>=7){
+      dragAnchor.current=null;suppressClick.current=true;
+      window.clearTimeout(hoverTimer.current);
+      skipHover.current=true;
+      void getCurrentWindow().startDragging().catch(err=>setError(String(err)));
+    }
+  };
+  const endDrag=()=>{dragAnchor.current=null};
   const fmt=(n:number)=>`${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
 
   return <main className={`app ${expanded?"is-open":""}`} onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}>
