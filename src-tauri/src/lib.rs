@@ -138,7 +138,6 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
         if let Ok(hwnd) = window.hwnd() {
             if SetWindowRgn(hwnd.0, region, 1) == 0 { let _=DeleteObject(region); return Err("Не вдалося застосувати форму вікна.".into()); }
         } else { let _=DeleteObject(region); }
-        }
     }
     #[cfg(not(windows))] { let _ = (window,expanded,pill_width,radius); }
     Ok(())
