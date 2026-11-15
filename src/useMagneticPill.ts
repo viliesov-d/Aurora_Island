@@ -12,10 +12,10 @@ const fmt=(n:number)=>n.toFixed(2);
  * It has no mouse hooks; native GetCursorPos only samples while the pill is visible.
  */
 function flowingPath(width:number,height:number,side:Side,cx:number,cy:number,pull:number) {
-  const w=width,h=height,r=Math.min(24,h/2);
+  const w=width,h=height,r=Math.min(18,h*.41);
   const b=Math.max(0,pull)*17;
   const x=clamp(cx,r+54,w-r-54);
-  const y=clamp(cy,r+6,h-r-6);
+  const y=clamp(cy,r+.5,h-r-.5);
   const p:string[]=[];
   const at=(a:number,b:number)=>fmt(a)+" "+fmt(b);
   p.push("M",at(r,0));
@@ -26,11 +26,12 @@ function flowingPath(width:number,height:number,side:Side,cx:number,cy:number,pu
   }
   p.push("L",at(w-r,0),"Q",at(w,0),at(w,r));
   if(side==="right"){
-    p.push("L",at(w,y-28));
-    p.push("C",at(w,y-12),at(w+b,y-12),at(w+b,y));
-    p.push("C",at(w+b,y+12),at(w,y+12),at(w,y+28));
-  }
-  p.push("L",at(w,h-r),"Q",at(w,h),at(w-r,h));
+    // A pill is only 44px high: deform its short semicircular end directly
+    // rather than drawing a long side segment that folds over itself.
+    p.push("C",at(w+b*.35,r),at(w+b,y-2),at(w+b,y));
+    p.push("C",at(w+b,y+2),at(w+b*.35,h-r),at(w,h-r));
+  }else p.push("L",at(w,h-r));
+  p.push("Q",at(w,h),at(w-r,h));
   if(side==="bottom"){
     p.push("L",at(x+52,h));
     p.push("C",at(x+25,h),at(x+20,h+b),at(x,h+b));
@@ -38,11 +39,10 @@ function flowingPath(width:number,height:number,side:Side,cx:number,cy:number,pu
   }
   p.push("L",at(r,h),"Q",at(0,h),at(0,h-r));
   if(side==="left"){
-    p.push("L",at(0,y+28));
-    p.push("C",at(0,y+12),at(-b,y+12),at(-b,y));
-    p.push("C",at(-b,y-12),at(0,y-12),at(0,y-28));
-  }
-  p.push("L",at(0,r),"Q",at(0,0),at(r,0),"Z");
+    p.push("C",at(-b*.35,h-r),at(-b,y+2),at(-b,y));
+    p.push("C",at(-b,y-2),at(-b*.35,r),at(0,r));
+  }else p.push("L",at(0,r));
+  p.push("Q",at(0,0),at(r,0),"Z");
   return p.join(" ");
 }
 
