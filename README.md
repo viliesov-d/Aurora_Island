@@ -82,3 +82,13 @@ Already implemented before this milestone: 4 themes, pill open/close, reposition
 The source archive of Island 1.2.10 contains images and documentation, not the original application code. These are original Aurora features inspired by its behavior rather than a copy.
 
 For Windows validation, also run `npm run tauri -- build --bundles nsis`, then manually verify WebView clipboard permissions, window hit-testing and weather requests. The frontend `npm run build` is not a substitute for Windows integration testing.
+
+## Stage 2: Windows-native clipboard, shortcut, reminders
+
+- **Clipboard (Windows):** native Unicode text read/write via Win32, with a 40 KiB read cap. Manual capture persists only when explicitly added. Automatic monitoring is **opt-in** in Settings and polls the Windows clipboard sequence number ~every 1.5 seconds. Automatically captured entries live only in this window's sessionStorage (not localStorage); pinning an entry explicitly makes it persistent. Stored history can be deleted from the Tools tab. The first sample after activation is discarded.
+- **Global shortcut:** `Ctrl+Alt+Space` summons the island's Command tab from another app, with an on/off toggle. If another program already owns the shortcut, an error is shown in Settings and Aurora still launches. `Ctrl+K` remains available when Aurora has keyboard focus. The hotkey currently has a fixed key combination.
+- **Windows notifications:** optional native toasts for a completed timer and due reminders, powered by `tauri-plugin-notification`. Test from Settings. On Windows the notifications plugin requires an **installed application**; dev builds may display PowerShell branding. System notification settings / Focus Assist can suppress popups. The app must be running for reminders to fire, since there is no background Windows service.
+- **Privacy:** no automatic clipboard read before consent; no uploads of captured text; no auto-paste into other apps. Users should disable monitoring when handling passwords or sensitive documents.
+- **Scope:** this is not a native notification listener for *other apps* and it does not collect system notification contents. Those require a separate implementation with user consent.
+
+Windows-specific testing: install the NSIS artifact, copy Unicode text in another app, enable monitoring and verify transient history, pin to preserve, press `Ctrl+Alt+Space` outside Aurora, test while hidden in tray, set a 1-minute reminder, and test the native toast button. Also test at 125%/150% display scaling.
