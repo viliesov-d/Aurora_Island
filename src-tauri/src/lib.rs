@@ -1,6 +1,7 @@
 mod secure_key;
 mod audio;
 mod clipboard;
+mod appearance;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -129,14 +130,31 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
         let scale = window.scale_factor().map_err(|e|e.to_string())?;
         let size = window.inner_size().map_err(|e|e.to_string())?;
         let px = |n:f64| (n*scale).round() as i32;
-        let w = px(pill_width.min(size.width as f64/scale));
+        let w = px(pill_width.min(size.width as f64 / scale));
         let h = size.height as i32;
-        let p = px(44.0);
-        let left = ((size.width as i32-w)/2).max(0);
-        let pill = CreateRoundRectRgn(left, 0, left+w, p, px(radius*2.0), px(radius*2.0));
+        let left = ((size.width as i32 - w) / 2).max(0);
+        // Overscan the *input mask* by 7-10 DIP around the actual CSS shell.
+        // The old mask cut through anti-aliased pixels at the visible rounded edge.
+        // Keep the mask narrow enough to avoid intercepting desktop clicks elsewhere.
+        let pill = CreateRoundRectRgn(
+            (left - px(10.0)).max(0), px(1.0),
+            (left + w + px(10.0)).min(size.width as i32), px(60.0),
+            px((radius + 10.0) * 2.0), px((radius + 10.0) * 2.0)
+        );
+        if pill.is_null() { return Err("Не вдалося створити маску острова.".into()); }
         let region = if expanded {
-            let card = CreateRoundRectRgn(px(10.0), px(52.0), size.width as i32 - px(10.0), h - px(8.0), px(radius*1.8), px(radius*1.8));
-            let union = CreateRoundRectRgn(0,0,1,1,1,1);
+            // CSS panel lives at x=14, y=66 and has a 16px bottom gutter.
+            let card = CreateRoundRectRgn(
+                px(8.0), px(60.0), size.width as i32 - px(8.0), h - px(9.0),
+                px(64.0), px(64.0)
+            );
+            let union = CreateRoundRectRgn(0, 0, 1, 1, 1, 1);
+            if card.is_null() || union.is_null() {
+                let _ = DeleteObject(pill);
+                if !card.is_null() { let _ = DeleteObject(card); }
+                if !union.is_null() { let _ = DeleteObject(union); }
+                return Err("Не вдалося створити маску відкритої панелі.".into());
+            }
             let _ = CombineRgn(union, pill, card, RGN_OR);
             let _ = DeleteObject(pill);
             let _ = DeleteObject(card);
@@ -191,7 +209,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
+        .invoke_handler(tauri::generate_handler![appearance::cursor_position, appearance::set_native_material, notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
         .setup(|app| {
             // A shortcut collision never prevents the island from starting.
             if let Err(err) = set_global_hotkey(app.handle().clone(), true) {
