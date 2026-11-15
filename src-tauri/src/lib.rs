@@ -151,6 +151,20 @@ fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f
 }
 
 #[tauri::command]
+fn notify_user(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    if title.chars().count() > 100 || body.chars().count() > 400 {
+        return Err("Повідомлення завелике.".into());
+    }
+    app.notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn set_global_hotkey(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let shortcut = "Ctrl+Alt+Space";
@@ -177,7 +191,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
+        .invoke_handler(tauri::generate_handler![notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
         .setup(|app| {
             // A shortcut collision never prevents the island from starting.
             if let Err(err) = set_global_hotkey(app.handle().clone(), true) {
