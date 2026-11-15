@@ -2,6 +2,9 @@
 //! never silently persists captured clipboard contents to disk.
 use serde::Serialize;
 
+// Standard registered-by-Windows clipboard format identifier, defined by winuser.h.
+const CF_UNICODETEXT: u32 = 13;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardSnapshot {
@@ -14,11 +17,13 @@ mod native {
     use super::ClipboardSnapshot;
     use windows_sys::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
-        IsClipboardFormatAvailable, OpenClipboard, SetClipboardData, CF_UNICODETEXT,
+        IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
     };
+    use windows_sys::Win32::Foundation::GlobalFree;
     use windows_sys::Win32::System::Memory::{
-        GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
+        GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
     };
+    use super::CF_UNICODETEXT;
 
     struct OpenedClipboard;
     impl OpenedClipboard {
