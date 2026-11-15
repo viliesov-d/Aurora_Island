@@ -22,8 +22,8 @@ mod native {
 
     struct OpenedClipboard;
     impl OpenedClipboard {
-        fn new() -> Result<Self, String> {
-            if unsafe { OpenClipboard(std::ptr::null_mut()) } == 0 {
+        fn new(hwnd: windows_sys::Win32::Foundation::HWND) -> Result<Self, String> {
+            if unsafe { OpenClipboard(hwnd) } == 0 {
                 Err("Буфер обміну тимчасово зайнятий іншою програмою.".into())
             } else {
                 Ok(Self)
@@ -40,7 +40,7 @@ mod native {
         if sequence == 0 || sequence == last_sequence {
             return Ok(ClipboardSnapshot { sequence, text: None });
         }
-        let _opened = OpenedClipboard::new()?;
+        let _opened = OpenedClipboard::new(std::ptr::null_mut())?;
         if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) } == 0 {
             return Ok(ClipboardSnapshot { sequence, text: None });
         }
@@ -68,7 +68,7 @@ mod native {
         })
     }
 
-    pub fn write(text: &str) -> Result<(), String> {
+    pub fn write(text: &str, hwnd: windows_sys::Win32::Foundation::HWND) -> Result<(), String> {
         let utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         if utf16.len() > 20_000 {
             return Err("Текст завеликий для швидкого копіювання.".into());
@@ -88,7 +88,7 @@ mod native {
             GlobalUnlock(allocated);
         }
         // The caller owns allocated until SetClipboardData succeeds.
-        let _opened = match OpenedClipboard::new() {
+        let _opened = match OpenedClipboard::new(hwnd) {
             Ok(clipboard) => clipboard,
             Err(err) => {
                 unsafe { GlobalFree(allocated); }
@@ -117,10 +117,13 @@ pub fn clipboard_snapshot(last_sequence: u32) -> Result<ClipboardSnapshot, Strin
 }
 
 #[tauri::command]
-pub fn clipboard_write(text: String) -> Result<(), String> {
-    #[cfg(windows)] { native::write(&text) }
+pub fn clipboard_write(window: tauri::WebviewWindow, text: String) -> Result<(), String> {
+    #[cfg(windows)] {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        native::write(&text, hwnd.0 as _)
+    }
     #[cfg(not(windows))] {
-        let _ = text;
+        let _ = (window, text);
         Err("Системний буфер обміну доступний лише у Windows.".into())
     }
 }
