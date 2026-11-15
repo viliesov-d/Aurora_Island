@@ -71,92 +71,92 @@ export default function App() {
   const dragAnchor=useRef<{x:number;y:number;at:number}|null>(null);
   const suppressClick=useRef(false);
   const timerInitial=useRef(300);
-  // Serializing layout mutations prevents stale window regions after rapid toggles.
-  const resizeWindow=useCallback((open:boolean, pillWidth:number, radius:number, hide=false)=>{
+  // A single stable WebView geometry. Only the Win32 HIT REGION changes
+  // between compact and expanded; the actual WebView never resizes on click.
+  const initializedNative = useRef(false);
+  const previousExpanded = useRef(false);
+  const morphMs = Math.max(380, Math.min(680, Math.round(520 * 75 / prefs.speed)));
+  const updateHitRegion=useCallback((open:boolean, hide:boolean, width:number, radius:number)=>{
     layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
+      await invoke("set_native_region",{expanded:open, pillWidth:width, radius, hidden:hide});
+    });
+    return layoutQueue.current;
+  },[]);
+  const initializeWindow=useCallback(()=>{
+    layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
+      if(initializedNative.current)return;
       const w=getCurrentWindow();
       const scale=await w.scaleFactor();
       const previous=await w.outerSize();
       const position=await w.outerPosition();
-      const frameWidth=hide?184:open?568:pillWidth+56;
-      const monitor=await currentMonitor();
-      const availableHeight=monitor
-        ? (monitor.size.height-(position.y-monitor.position.y)-22)/scale
-        : 710;
-      const frameHeight=hide?40:open?Math.max(390,Math.min(710,availableHeight)):86;
-      let x=Math.round(position.x+(previous.width-frameWidth*scale)/2);
+      const monitor=await currentMonitor().catch(()=>null);
+      const width=568;
+      // Match viewport to the monitor once. Never change dimensions during
+      // the compact -> expanded animation: it stutters DWM/WebView2.
+      const height=monitor
+        ? Math.max(360,Math.min(700,Math.floor(monitor.size.height/scale)-24))
+        : 690;
+      let x=position.x+(previous.width-width*scale)/2;
       let y=position.y;
-      if(!restoredPosition.current){
-        restoredPosition.current=true;
-        try {
-          const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
-          if(Number.isFinite(saved?.centerX)&&Number.isFinite(saved?.y)){
-            x=Math.round(saved.centerX-frameWidth*scale/2);
-            y=Math.round(saved.y);
-          }
-        } catch { /* Ignore invalid position data. */ }
-      }
-      if(hide){
-        try { const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
-          if(Number.isFinite(saved?.centerX))x=Math.round(saved.centerX-frameWidth*scale/2);
-        }catch{}
-        y=monitor?.position.y??0;
-      }else if(previous.height<=Math.round(45*scale)){
-        // Restore the exact position held before the strip was shown.
-        try { const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
-          if(Number.isFinite(saved?.centerX)&&Number.isFinite(saved?.y)){
-            x=Math.round(saved.centerX-frameWidth*scale/2); y=Math.round(saved.y);
-          }
-        }catch{}
-      }
-      if(open&&monitor){
+      try {
+        const saved=JSON.parse(localStorage.getItem("aurora:position")||"null");
+        if(Number.isFinite(saved?.centerX)&&Number.isFinite(saved?.y)){
+          x=saved.centerX-width*scale/2;
+          y=saved.y;
+        }
+      }catch{}
+      if(monitor){
         const minX=monitor.position.x+4;
-        const maxX=monitor.position.x+monitor.size.width-Math.round(frameWidth*scale)-4;
-        x=Math.min(Math.max(x,minX),Math.max(minX,maxX));
+        const maxX=monitor.position.x+monitor.size.width-Math.round(width*scale)-4;
+        x=Math.min(Math.max(Math.round(x),minX),Math.max(minX,maxX));
         const minY=monitor.position.y+2;
-        const maxY=monitor.position.y+monitor.size.height-Math.round(frameHeight*scale)-6;
-        y=Math.min(Math.max(y,minY),Math.max(minY,maxY));
+        const maxY=monitor.position.y+monitor.size.height-Math.round(height*scale)-8;
+        y=Math.min(Math.max(Math.round(y),minY),Math.max(minY,maxY));
       }
-      await w.setSize(new LogicalSize(frameWidth,frameHeight));
-      await w.setPosition(new PhysicalPosition(x,y));
-      await invoke("set_native_region",{expanded:open,pillWidth,radius,hidden:hide});
-    }).catch(err=>{ console.warn("Aurora layout update failed",err); });
+      await w.setSize(new LogicalSize(width,height));
+      await w.setPosition(new PhysicalPosition(Math.round(x),Math.round(y)));
+      await invoke("set_native_region",{
+        expanded:false,pillWidth:prefs.width,radius:prefs.radius,hidden,
+      });
+      initializedNative.current=true;
+      await w.show(); // Never display the native window before mask/chrome setup.
+    });
     return layoutQueue.current;
   },[]);
+
   const invokeMode=(open:boolean)=>{
+    window.clearTimeout(collapseResizeTimer.current);
     window.clearTimeout(hoverTimer.current);
     window.clearTimeout(leaveTimer.current);
-    skipHover.current=!open;
-    if(open&&(openingWindow.current||expanded))return;
     const token=++transitionToken.current;
     if(!open){
       openingWindow.current=false;
       setExpanded(false);
       return;
     }
+    if(openingWindow.current||expanded)return;
     openingWindow.current=true;
     if(hidden)setHidden(false);
-    // Expand the native window first, then start CSS morphing at full size.
-    void resizeWindow(true,prefs.width,prefs.radius,false).then(()=>{
+    void updateHitRegion(true,false,prefs.width,prefs.radius).then(()=>{
       if(transitionToken.current===token){
         openingWindow.current=false;
         setExpanded(true);
       }
     }).catch(err=>{
       openingWindow.current=false;
-      setError(`Помилка розгортання острова: ${String(err)}`);
+      setError("Не вдалося розкрити острів: "+String(err));
     });
   };
+
   const hideToHandle=()=>{
-    window.clearTimeout(hoverTimer.current);
-    window.clearTimeout(leaveTimer.current);
-    skipHover.current=true;
+    ++transitionToken.current;
+    openingWindow.current=false;
+    window.clearTimeout(collapseResizeTimer.current);
     setExpanded(false);
     setHidden(true);
   };
   const restoreFromHandle=()=>{
     setHidden(false);
-    skipHover.current=true;
     setExpanded(false);
   };
   useOutsideCollapse(expanded&&!hidden,prefs.autoHide,()=>invokeMode(false));
@@ -170,21 +170,32 @@ export default function App() {
   const updatePrefs=(next:Partial<Preferences>)=>setPrefs(p=>({...p,...next}));
   useEffect(()=>{localStorage.setItem("aurora:prefs",JSON.stringify(prefs));document.documentElement.dataset.theme=prefs.theme;document.documentElement.style.setProperty("--pill-width",`${prefs.width}px`);document.documentElement.style.setProperty("--glass-blur",`${prefs.blur}px`);document.documentElement.style.setProperty("--glass-strength",String(prefs.glass/100));document.documentElement.style.setProperty("--motion-speed",`${prefs.speed/100}`);document.documentElement.style.setProperty("--surface-opacity",String(prefs.opacity/100));document.documentElement.style.setProperty("--island-radius",`${prefs.radius}px`);document.documentElement.style.setProperty("--accent",prefs.accent);},[prefs]);
   useEffect(()=>{
+    let alive=true;
+    void initializeWindow().catch(e=>{
+      if(alive)setError("Не вдалося підготувати вікно: "+String(e));
+    });
+    return()=>{alive=false};
+  },[initializeWindow]);
+  useEffect(()=>{
     window.clearTimeout(collapseResizeTimer.current);
-    const recovering=wasHidden.current&&!hidden;
-    wasHidden.current=hidden;
-    if(openingWindow.current&&!hidden&&!expanded)return;
-    if(hidden||recovering||expanded||!initializedLayout.current){
-      initializedLayout.current=true;
-      void resizeWindow(expanded,prefs.width,prefs.radius,hidden);
-    }else{
-      // Allow the shell spring to settle before shrinking the native hit region.
+    if(!initializedNative.current)return;
+    const wasOpen=previousExpanded.current;
+    previousExpanded.current=expanded;
+    if(hidden){
+      void updateHitRegion(false,true,prefs.width,prefs.radius);
+    }else if(expanded){
+      // Open requests already switched the native hit mask before React morph.
+    }else if(wasOpen){
+      // Wait for CSS clip-path animation to finish before tightening hit tests.
       collapseResizeTimer.current=window.setTimeout(()=>{
-        if(!openingWindow.current)void resizeWindow(false,prefs.width,prefs.radius);
-      },540);
+        if(!openingWindow.current)
+          void updateHitRegion(false,false,prefs.width,prefs.radius);
+      },morphMs+90);
+    }else{
+      void updateHitRegion(false,false,prefs.width,prefs.radius);
     }
     return()=>window.clearTimeout(collapseResizeTimer.current);
-  },[expanded,hidden,prefs.width,prefs.radius,resizeWindow]);
+  },[expanded,hidden,prefs.width,prefs.radius,morphMs,updateHitRegion]);
   useEffect(()=>{
     void invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
       console.warn("Native Acrylic material is not available on this Windows build",err);
