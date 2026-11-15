@@ -1,0 +1,25 @@
+/* Lightweight Atoll-style status animation for native SMTC and Windows volume changes. */
+.island .live-equalizer{
+ display:flex;align-items:end;justify-content:center;gap:2.3px;
+ width:19px;height:17px;
+}
+.island .live-equalizer i{
+ width:3px;height:8px;display:block;border-radius:3px;
+ background:currentColor;transform-origin:center bottom;
+ animation:aurora-eq 800ms ease-in-out infinite alternate;
+}
+.island .live-equalizer i:nth-child(2){height:13px;animation-duration:570ms;animation-delay:-300ms}
+.island .live-equalizer i:nth-child(3){height:10px;animation-duration:970ms;animation-delay:-470ms}
+@keyframes aurora-eq{
+ 0%{transform:scaleY(.36)}
+ 45%{transform:scaleY(.85)}
+ 100%{transform:scaleY(1.32)}
+}
+.island .live-toast{
+ display:flex;align-items:center;
+ overflow:hidden;max-width:170px;
+ white-space:nowrap;text-overflow:ellipsis;
+}
+@media(prefers-reduced-motion:reduce){
+ .island .live-equalizer i{animation:none;transform:none}
+}
