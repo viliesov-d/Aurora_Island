@@ -319,21 +319,55 @@ export default function App() {
   };
   const endDrag=()=>{dragAnchor.current=null};
   const fmt=(n:number)=>`${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
+  const activities=useMemo<Activity[]>(()=>{
+    const list:Activity[]=[];
+    if(prefs.modules.timer&&timerOn) list.push({
+      id:"timer",title:"Таймер",detail:fmt(seconds),
+      icon:activityIcons.timer,progress:Math.max(0,Math.min(1,seconds/Math.max(60,timerInitial.current))),
+      onOpen:()=>{setTab("home");setExpanded(true);}
+    });
+    if(prefs.modules.media&&media?.available&&media.playing) list.push({
+      id:"music",title:media.title?.slice(0,34)||"Відтворення",
+      detail:media.artist?.slice(0,32)||"Музика Windows",
+      icon:activityIcons.music,
+      progress:media.durationSeconds>0?media.positionSeconds/media.durationSeconds:undefined,
+      onOpen:()=>{setTab("media");setExpanded(true);}
+    });
+    if(prefs.modules.battery&&battery?.charging&&battery.batteryPercent!=null) list.push({
+      id:"battery",title:"Заряджання",detail:`${battery.batteryPercent}%`,
+      icon:activityIcons.battery,progress:battery.batteryPercent/100,
+      onOpen:()=>{setTab("home");setExpanded(true);}
+    });
+    return list;
+  },[prefs.modules.timer,prefs.modules.media,prefs.modules.battery,timerOn,seconds,media,battery]);
+  const live=useLiveActivity(activities);
 
-  return <main className={`app ${expanded?"is-open":""}`} onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}>
+  return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
-      <div ref={pillRef} className="pill" onPointerDown={e=>{if(e.target===e.currentTarget)startDrag(e)}}>
+      <motion.div layout="size" className="island-morph" transition={{type:"spring",stiffness:335,damping:30,mass:.95}} aria-hidden="true" />
+      {hidden?<button className="island-restore" onPointerEnter={restoreFromHandle} onClick={restoreFromHandle} aria-label="Повернути Aurora Island" title="Повернути Aurora Island"><span/></button>:<>
+      <div ref={pillRef} className="pill" onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}
+        onPointerDown={e=>{if(e.target===e.currentTarget)beginDrag(e)}} onPointerMove={moveDrag}
+        onPointerUp={endDrag} onPointerCancel={endDrag}
+        onClick={e=>{if(e.target===e.currentTarget&&!suppressClick.current)invokeMode(!expanded);suppressClick.current=false;}}
+        onWheel={e=>{if(!expanded)live.rotate(e)}}>
         <span className="magnetic-edge" aria-hidden="true" />
-        <button type="button" className="drag-handle" onPointerDown={startDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button><button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={()=>invokeMode(!expanded)}><span className="brand-mark"><Sparkles size={14}/></span><span className="brand-name">aurora</span></button>
+        <button type="button" className="drag-handle" onPointerDown={beginDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button>
+        <button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={()=>invokeMode(!expanded)}>
+          <span className="brand-mark"><Sparkles size={14}/></span>
+          {!live.selected&&!toast&&<span className="brand-name">aurora</span>}
+        </button>
         <div className="pill-status">
-          {prefs.modules.battery&&battery?.batteryPercent!=null&&<span className="battery-chip">{battery.charging?<BatteryCharging size={14}/>:<Battery size={14}/>} {battery.batteryPercent}%</span>}
-          {prefs.modules.clock&&<span className="time-chip"><ClockDisplay kind="time"/></span>}
-          {prefs.modules.media&&media?.available&&prefs.width>=275&&<button className="pill-media" aria-label="Відкрити музику" title={media.title||"Керування музикою"} onClick={()=>{setTab("media");invokeMode(true)}}><Music2 size={15}/></button>}
+          {!expanded&&toast&&<span className="live-toast" role="status">{toast}</span>}
+          {!expanded&&!toast&&live.selected&&<button className="live-open" onClick={live.selected.onOpen} title="Відкрити активність"><CompactActivity activity={live.selected} count={live.count}/></button>}
+          {!expanded&&!toast&&!live.selected&&prefs.modules.battery&&battery?.batteryPercent!=null&&<span className="battery-chip">{battery.charging?<BatteryCharging size={14}/>:<Battery size={14}/>} {battery.batteryPercent}%</span>}
+          {!expanded&&!toast&&!live.selected&&prefs.modules.clock&&<span className="time-chip"><ClockDisplay kind="time"/></span>}
+          {!expanded&&!toast&&!live.selected&&prefs.modules.media&&media?.available&&prefs.width>=275&&<button className="pill-media" aria-label="Відкрити музику" title={media.title||"Керування музикою"} onClick={()=>{setTab("media");invokeMode(true)}}><Music2 size={15}/></button>}
           <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={()=>void invokeMode(!expanded)}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
         </div>
       </div>
-      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" initial={{opacity:0,y:-16}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
-        <header className="panel-head"><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
+      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" onPointerLeave={scheduleCollapse} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
+        <header className="panel-head"><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Сховати до смужки" onClick={hideToHandle}><ChevronUp size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
         <nav className="tabs"><button className={tab==="home"?"active":""} onClick={()=>setTab("home")}><Command size={15}/> Огляд</button>{(prefs.modules.media||prefs.modules.volume)&&<button className={tab==="media"?"active":""} onClick={()=>setTab("media")}><Music2 size={15}/> Музика</button>}<button className={tab==="chat"?"active":""} onClick={()=>setTab("chat")}><MessageCircle size={15}/> AI чат</button><button className={tab==="tools"?"active":""} onClick={()=>setTab("tools")}><Command size={15}/> Інструменти</button><button className={tab==="commands"?"active":""} onClick={()=>setTab("commands")}><Command size={15}/> Пошук</button><button className={tab==="settings"?"active":""} onClick={()=>setTab("settings")}><Settings2 size={15}/> Налаштування</button></nav>
         <div className="panel-body">
           {tab==="home"&&<div className="home-grid">
@@ -354,6 +388,7 @@ export default function App() {
             <div className="settings-section"><div className="section-title">МОДУЛІ</div><Toggle label="Годинник" checked={prefs.modules.clock} onChange={v=>updatePrefs({modules:{...prefs.modules,clock:v}})}/><Toggle label="Батарея (Windows API)" checked={prefs.modules.battery} onChange={v=>updatePrefs({modules:{...prefs.modules,battery:v}})}/><Toggle label="Таймер" checked={prefs.modules.timer} onChange={v=>updatePrefs({modules:{...prefs.modules,timer:v}})}/><Toggle label="Керування музикою (SMTC)" checked={prefs.modules.media} onChange={v=>updatePrefs({modules:{...prefs.modules,media:v}})}/><Toggle label="Системна гучність" checked={prefs.modules.volume} onChange={v=>updatePrefs({modules:{...prefs.modules,volume:v}})}/></div>
             <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
               <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
+              <Toggle label="Заблокувати положення острова" checked={prefs.lockPosition} onChange={v=>updatePrefs({lockPosition:v})}/>
               <Toggle label="Глобальна клавіша Ctrl+Alt+Space" checked={prefs.globalHotkey} onChange={v=>updatePrefs({globalHotkey:v})}/>
               <Toggle label="Автоматична історія буфера обміну" checked={prefs.clipboardWatch} onChange={v=>updatePrefs({clipboardWatch:v})}/>
               <p className="tool-help">Автозбереження буфера вимкнено за замовчуванням. При ввімкненні нові записи відстежуються у Windows та зберігаються тільки в сесії, без запису на диск. У буфер можуть потрапити паролі й особисті дані.</p>
@@ -363,6 +398,7 @@ export default function App() {
         </div>
         <footer className="panel-footer"><span><span className="footer-mark"><Sparkles size={11}/></span> AURORA ISLAND <span className="footer-version">v0.1 · Windows</span></span><span>Перетягніть острів, щоб змінити позицію</span></footer>
       </motion.div>}</AnimatePresence>
+      </>}
     </section>
   </main>
 }
