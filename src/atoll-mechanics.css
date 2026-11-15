@@ -116,3 +116,8 @@
 .island.theme-soft .magnetic-shape{stroke:#bdcbd5}
 .island.theme-neon .magnetic-shape{stroke:#ce8effa0}
 @media(prefers-reduced-motion:reduce){.island .magnetic-svg{display:none}}
+
+/* Expanded page header doubles as a native drag surface, but not its buttons. */
+.app.is-open .island .panel-head{cursor:grab;touch-action:none}
+.app.is-open .island .panel-head:active{cursor:grabbing}
+.app.is-open .island .head-actions,.app.is-open .island .head-actions button{cursor:pointer}
