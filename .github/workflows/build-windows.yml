@@ -2,7 +2,7 @@ name: Build Windows installer
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    branches: ["main"]\n    tags: ["v*"]
 permissions:
   contents: read
 jobs:
