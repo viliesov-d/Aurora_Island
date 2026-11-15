@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 const ReactMarkdown = lazy(() => import("react-markdown"));
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
+import { LogicalSize, PhysicalPosition, currentMonitor, monitorFromPoint } from "@tauri-apps/api/window";
+import { createTransitionGate, stableWindowGeometry } from "./windowBehavior";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Battery, BatteryCharging, Bot, ChevronDown, ChevronUp, Command, ExternalLink, Grip, MessageCircle, Minus, Pause, Play, Plus, Send, Settings2, ShieldCheck, Sparkles, Timer, Music2, X } from "lucide-react";
@@ -26,6 +27,8 @@ function loadPrefs(): Preferences {
     return {
       ...saved,
       width: Math.min(340, Math.max(240, Number(saved.width) || defaults.width)),
+      radius: Math.min(38, Math.max(18, Number(saved.radius) || defaults.radius)),
+      speed: Math.min(140, Math.max(35, Number(saved.speed) || defaults.speed)),
       opacity: Math.min(100, Math.max(35, Number(saved.opacity) || defaults.opacity)),
       blur: Math.min(30, Math.max(0, Number(saved.blur) || 0)),
       hoverExpand: false
@@ -44,10 +47,26 @@ export default function App() {
   });
   const [hidden,setHidden]=useState(()=>{try{return localStorage.getItem("aurora:hidden")==="true"}catch{return false}});
   const hiddenLatest=useRef(hidden); hiddenLatest.current=hidden;
+  const [fullscreenHidden,setFullscreenHidden]=useState(false);
+  useEffect(()=>{
+    let active=true,pending=false;
+    const poll=async()=>{
+      if(pending)return;
+      pending=true;
+      try{
+        const next=await invoke<boolean>('sync_window_environment',{enabled:prefs.hideInFullscreen});
+        if(active)setFullscreenHidden(next);
+      }catch(e){console.warn('Fullscreen policy unavailable',e);}
+      finally{pending=false;}
+    };
+    void poll();
+    const timer=window.setInterval(()=>void poll(),750);
+    return()=>{active=false;window.clearInterval(timer);};
+  },[prefs.hideInFullscreen]);
   const [toast,setToast]=useState<string|null>(null);
   useClipboardWatcher(prefs.clipboardWatch);
   useReminderNotifications(prefs.notifications);
-  const pillRef = useMagneticPill(prefs.cursorPull&&!hidden, expanded);
+  const pillRef = useMagneticPill(prefs.cursorPull&&!hidden&&!fullscreenHidden, expanded);
   const [battery,setBattery]=useState<{batteryPercent:number|null;charging:boolean|null}|null>(null); const [messages,setMessages]=useState<Message[]>(readMessages); const [draft,setDraft]=useState(""); const [busy,setBusy]=useState(false); const [hasKey,setHasKey]=useState(false); const [apiKey,setApiKey]=useState(""); const [seconds,setSeconds]=useState(300); const [timerOn,setTimerOn]=useState(false); const [error,setError]=useState("");
   const [media,setMedia]=useState<MediaState|null>(null);
   const [volume,setVolume]=useState<VolumeState|null>(null);
@@ -56,14 +75,14 @@ export default function App() {
   const volumeTimer=useRef<number|undefined>(undefined);
   const lastVolumeInteraction=useRef(0);
   useNativeAudioEvents({ enabled:prefs.systemHud, volumeEnabled:prefs.modules.volume,
-    mediaEnabled:prefs.modules.media, expanded, hidden, media,
+    mediaEnabled:prefs.modules.media, expanded, hidden:hidden||fullscreenHidden, media,
     lastManualInteraction:lastVolumeInteraction, onToast:setToast });
   const leaveTimer=useRef<number|undefined>(undefined);
   const hoverTimer=useRef<number|undefined>(undefined);
   const layoutQueue=useRef<Promise<void>>(Promise.resolve());
   const collapseResizeTimer=useRef<number|undefined>(undefined);
-  const openingWindow=useRef(false);
-  const transitionToken=useRef(0);
+  const transitionGate=useRef(createTransitionGate());
+  const reducedMotion=useReducedMotion();
   const chatEnd=useRef<HTMLDivElement>(null);
   const dragAnchor=useRef<{x:number;y:number;at:number}|null>(null);
   const suppressClick=useRef(false);
@@ -72,7 +91,7 @@ export default function App() {
   // between compact and expanded; the actual WebView never resizes on click.
   const initializedNative = useRef(false);
   const previousExpanded = useRef(false);
-  const morphMs = Math.max(380, Math.min(680, Math.round(520 * 75 / prefs.speed)));
+  const morphMs = reducedMotion?0:Math.max(280, Math.min(1120, Math.round(520 * 75 / prefs.speed)));
   const updateHitRegion=useCallback((open:boolean, hide:boolean, width:number, radius:number)=>{
     layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
       await invoke("set_native_region",{expanded:open, pillWidth:width, radius, hidden:hide});
@@ -86,7 +105,7 @@ export default function App() {
       const scale=await w.scaleFactor();
       const previous=await w.outerSize();
       const position=await w.outerPosition();
-      const monitor=await currentMonitor().catch(()=>null);
+      let monitor=await currentMonitor().catch(()=>null);
       const width=568;
       // Match viewport to the monitor once. Never change dimensions during
       // the compact -> expanded animation: it stutters DWM/WebView2.
@@ -100,18 +119,13 @@ export default function App() {
         if(Number.isFinite(saved?.centerX)&&Number.isFinite(saved?.y)){
           x=saved.centerX-width*scale/2;
           y=saved.y;
+          monitor=await monitorFromPoint(saved.centerX,saved.y+22*scale).catch(()=>null)??monitor;
         }
       }catch{}
-      if(monitor){
-        const minX=monitor.position.x+4;
-        const maxX=monitor.position.x+monitor.size.width-Math.round(width*scale)-4;
-        x=Math.min(Math.max(Math.round(x),minX),Math.max(minX,maxX));
-        const minY=monitor.position.y+2;
-        const maxY=monitor.position.y+monitor.size.height-Math.round(height*scale)-8;
-        y=Math.min(Math.max(Math.round(y),minY),Math.max(minY,maxY));
-      }
-      await w.setSize(new LogicalSize(width,height));
-      await w.setPosition(new PhysicalPosition(Math.round(x),Math.round(y)));
+      const geometry=monitor?stableWindowGeometry(scale,{x,y,width:width*scale},
+        {...monitor.workArea.position,...monitor.workArea.size}):{x,y,width,height};
+      await w.setSize(new LogicalSize(geometry.width,geometry.height));
+      await w.setPosition(new PhysicalPosition(Math.round(geometry.x),Math.round(geometry.y)));
       await invoke("set_native_region",{
         expanded:false,pillWidth:prefs.width,radius:prefs.radius,hidden,
       });
@@ -130,30 +144,49 @@ export default function App() {
     window.clearTimeout(collapseResizeTimer.current);
     window.clearTimeout(hoverTimer.current);
     window.clearTimeout(leaveTimer.current);
-    const token=++transitionToken.current;
+    const wasPending=transitionGate.current.pending;
+    const token=transitionGate.current.begin(open);
+    if(token===null)return;
     if(!open){
-      openingWindow.current=false;
       setExpanded(false);
+      if(wasPending&&!expanded)void updateHitRegion(false,hidden,prefs.width,prefs.radius).catch(e=>setError(String(e)));
       return;
     }
-    if(openingWindow.current||expanded)return;
-    openingWindow.current=true;
+    if(expanded){transitionGate.current.finish(token);return;}
     if(hidden)setHidden(false);
     void updateHitRegion(true,false,prefs.width,prefs.radius).then(()=>{
-      if(transitionToken.current===token){
-        openingWindow.current=false;
+      if(transitionGate.current.finish(token)){
         setExpanded(true);
       }
     }).catch(err=>{
-      openingWindow.current=false;
-      setError("Не вдалося розкрити острів: "+String(err));
+      if(transitionGate.current.finish(token))setError("Не вдалося розкрити острів: "+String(err));
     });
   };
 
   const invokeModeRef=useRef(invokeMode);invokeModeRef.current=invokeMode;
+  const latestLayout=useRef({expanded,hidden,width:prefs.width,radius:prefs.radius});
+  latestLayout.current={expanded,hidden,width:prefs.width,radius:prefs.radius};
+  useEffect(()=>{
+    let active=true,dispose:(()=>void)|undefined;
+    void getCurrentWindow().onScaleChanged(()=>{
+      layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
+        if(!active||!initializedNative.current)return;
+        const w=getCurrentWindow();
+        const [scale,size,position,monitor]=await Promise.all([w.scaleFactor(),w.outerSize(),w.outerPosition(),currentMonitor()]);
+        if(!monitor)return;
+        const geometry=stableWindowGeometry(scale,{...position,width:size.width},
+          {...monitor.workArea.position,...monitor.workArea.size});
+        await w.setSize(new LogicalSize(geometry.width,geometry.height));
+        await w.setPosition(new PhysicalPosition(geometry.x,geometry.y));
+        const next=latestLayout.current;
+        await invoke('set_native_region',{expanded:next.expanded,hidden:next.hidden,pillWidth:next.width,radius:next.radius});
+      });
+      void layoutQueue.current.catch(e=>{if(active)setError(String(e));});
+    }).then(unlisten=>{if(active)dispose=unlisten;else unlisten();}).catch(console.warn);
+    return()=>{active=false;dispose?.();};
+  },[]);
   const hideToHandle=()=>{
-    ++transitionToken.current;
-    openingWindow.current=false;
+    transitionGate.current.begin(false);
     window.clearTimeout(collapseResizeTimer.current);
     setExpanded(false);
     setHidden(true);
@@ -162,7 +195,7 @@ export default function App() {
     setHidden(false);
     setExpanded(false);
   };
-  useOutsideCollapse(expanded&&!hidden,prefs.autoHide,()=>invokeMode(false));
+  useOutsideCollapse(expanded&&!hidden&&!fullscreenHidden,prefs.autoHide,()=>invokeMode(false));
   useEffect(()=>{try{localStorage.setItem("aurora:last-tab",tab)}catch{}},[tab]);
   useEffect(()=>{try{localStorage.setItem("aurora:hidden",String(hidden))}catch{}},[hidden]);
   useEffect(()=>{
@@ -182,7 +215,7 @@ export default function App() {
   useEffect(()=>{
     window.clearTimeout(collapseResizeTimer.current);
     if(!initializedNative.current)return;
-    if(openingWindow.current&&!expanded&&!hidden)return;
+    if(transitionGate.current.pending&&!expanded&&!hidden)return;
     const wasOpen=previousExpanded.current;
     previousExpanded.current=expanded;
     if(hidden){
@@ -192,7 +225,7 @@ export default function App() {
     }else if(wasOpen){
       // Wait for CSS clip-path animation to finish before tightening hit tests.
       collapseResizeTimer.current=window.setTimeout(()=>{
-        if(!openingWindow.current)
+        if(!transitionGate.current.pending)
           void updateHitRegion(false,false,prefs.width,prefs.radius);
       },morphMs+90);
     }else{
@@ -320,7 +353,7 @@ export default function App() {
     return()=>unlisten?.();
   },[]);
   useEffect(()=>{const onKey=(e:KeyboardEvent)=>{
-    if(e.key==="Escape"&&expanded){e.preventDefault();invokeModeRef.current(false)}
+    if(e.key==="Escape"&&(expanded||transitionGate.current.pending)){e.preventDefault();invokeModeRef.current(false)}
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){
       e.preventDefault();setTab("commands");invokeModeRef.current(true);
     }
@@ -378,10 +411,10 @@ export default function App() {
       if(live.selected?.id==="music")setTab("media");
       else if(live.selected?.id==="timer")setTab("home");
     }
-    invokeMode(!expanded);
+    invokeMode(!expanded&&!transitionGate.current.pending);
   };
 
-  return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`} style={{"--morph-duration":`${morphMs}ms`} as CSSProperties}>
+  return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""} ${fullscreenHidden?"fullscreen-hidden":""}`} style={{"--morph-duration":`${morphMs}ms`} as CSSProperties}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
       <div className="island-morph" aria-hidden="true">
         <span className="morph-layer morph-compact"/>
@@ -429,7 +462,7 @@ export default function App() {
           {tab==="chat"&&<div className="chat-view"><div className="chat-topline"><span><ShieldCheck size={14}/> API-ключ захищений DPAPI</span><label className="attach-btn">Прикріпити файл<input type="file" accept=".txt,.md,.json,.csv,.log,.yaml,.yml,.xml" onChange={e=>attachText(e.target.files?.[0])}/></label></div><div className="messages">{messages.map((m,i)=><div className={`message ${m.role}`} key={i}><div className="avatar">{m.role==="assistant"?<Sparkles size={14}/>:"Я"}</div><div className="bubble">{m.role==="assistant"?<Suspense fallback={m.content}><ReactMarkdown>{m.content|| (busy&&i===messages.length-1?"Думаю…":"")}</ReactMarkdown></Suspense>:m.content}</div></div>)}<div ref={chatEnd}/></div>{error&&<div className="error-msg">{error}</div>}<form className="composer" onSubmit={e=>{e.preventDefault();void sendMessage()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void sendMessage()}}} placeholder="Напишіть повідомлення…"/><button type="submit" disabled={busy||!draft.trim()} aria-label="Надіслати"><Send size={16}/></button></form><div className="chat-foot">Відповіді надходять через офіційний OpenAI API · модель GPT-4.1 mini</div></div>}
           {tab==="settings"&&<div className="settings-view"><div className="settings-section"><div className="section-title">ОФОРМЛЕННЯ</div><div className="theme-grid">{(Object.keys(themeNames) as Theme[]).map(t=><button key={t} className={`theme-option ${prefs.theme===t?"selected":""}`} onClick={()=>updatePrefs({theme:t})}><span className={`theme-preview preview-${t}`}><i/></span><span>{themeNames[t]}</span></button>)}</div><Slider label="Ширина острова" value={prefs.width} min={240} max={340} suffix=" px" onChange={v=>updatePrefs({width:v})}/><Slider label="Заокруглення" value={prefs.radius} min={18} max={38} suffix=" px" onChange={v=>updatePrefs({radius:v})}/><Slider label="Прозорість" value={prefs.opacity} min={35} max={100} suffix="%" onChange={v=>updatePrefs({opacity:v})}/><label className="color-row">Акцентний колір<input type="color" value={prefs.accent} onChange={e=>updatePrefs({accent:e.target.value})}/></label>{prefs.theme==="glass"&&<><Slider label="М’якість відблисків" value={prefs.blur} min={0} max={30} suffix=" px" onChange={v=>updatePrefs({blur:v})}/><Slider label="Інтенсивність скла" value={prefs.glass} min={10} max={100} suffix="%" onChange={v=>updatePrefs({glass:v})}/></>}<Slider label="Швидкість анімації" value={prefs.speed} min={35} max={140} suffix="%" onChange={v=>updatePrefs({speed:v})}/></div>
             <div className="settings-section"><div className="section-title">МОДУЛІ</div><Toggle label="Годинник" checked={prefs.modules.clock} onChange={v=>updatePrefs({modules:{...prefs.modules,clock:v}})}/><Toggle label="Батарея (Windows API)" checked={prefs.modules.battery} onChange={v=>updatePrefs({modules:{...prefs.modules,battery:v}})}/><Toggle label="Таймер" checked={prefs.modules.timer} onChange={v=>updatePrefs({modules:{...prefs.modules,timer:v}})}/><Toggle label="Керування музикою (SMTC)" checked={prefs.modules.media} onChange={v=>updatePrefs({modules:{...prefs.modules,media:v}})}/><Toggle label="Системна гучність" checked={prefs.modules.volume} onChange={v=>updatePrefs({modules:{...prefs.modules,volume:v}})}/></div>
-            <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
+            <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Приховувати над повноекранними програмами" checked={prefs.hideInFullscreen} onChange={v=>updatePrefs({hideInFullscreen:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
               <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
               <Toggle label="Заблокувати положення острова" checked={prefs.lockPosition} onChange={v=>updatePrefs({lockPosition:v})}/>
               <Toggle label="Розумне відкриття активності" checked={prefs.smartOpen} onChange={v=>updatePrefs({smartOpen:v})}/>

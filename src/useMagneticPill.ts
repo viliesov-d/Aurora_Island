@@ -92,6 +92,7 @@ export function useMagneticPill(enabled:boolean,expanded:boolean){
       el.style.setProperty("--magnet-strength","0");
       el.style.setProperty("--lens-x","50%");
       el.style.setProperty("--lens-y","0%");
+      last=0;
     };
     const draw=(time:number)=>{
       frame=0;
@@ -138,6 +139,7 @@ export function useMagneticPill(enabled:boolean,expanded:boolean){
       el.style.setProperty("--magnet-strength",px(sum));
       if(!settled||Math.abs(tx-ax)>.8||Math.abs(ty-ay)>.8)
         frame=requestAnimationFrame(draw);
+      else last=0; // The next wake must not integrate time spent idle.
     };
     const poll=async()=>{
       if(!alive||busy||document.hidden||reduced.matches)return;
