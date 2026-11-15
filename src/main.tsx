@@ -6,5 +6,6 @@ import "./visual-refresh.css";
 import "./atoll-mechanics.css";
 import "./window-polish.css";
 import "./audio-hud.css";
+import "./motion-v2.css";
 
 createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);

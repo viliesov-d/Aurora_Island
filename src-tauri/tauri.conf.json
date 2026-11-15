@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "Aurora Island",
-        "width": 296,
-        "height": 52,
+        "width": 568,
+        "height": 710,
         "minWidth": 256,
         "minHeight": 48,
         "decorations": false,
@@ -24,7 +24,7 @@
         "skipTaskbar": true,
         "resizable": false,
         "shadow": false,
-        "visible": true,
+        "visible": false,
         "focus": false
       }
     ],

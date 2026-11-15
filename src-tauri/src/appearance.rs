@@ -38,44 +38,51 @@ pub fn cursor_position(window: tauri::WebviewWindow) -> Result<Option<CursorPoin
 #[cfg(windows)]
 pub fn ensure_borderless(window: &tauri::WebviewWindow) -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE,
+        GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE, GWL_EXSTYLE,
         WS_CAPTION, WS_THICKFRAME, WS_SYSMENU, WS_MINIMIZEBOX, WS_MAXIMIZEBOX,
-        WS_POPUP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_FRAMECHANGED,
+        WS_POPUP, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
+        WS_EX_STATICEDGE, WS_EX_WINDOWEDGE, WS_EX_TOOLWINDOW,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_FRAMECHANGED,
+    };
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_NCRENDERING_POLICY, DWMNCRP_DISABLED,
     };
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     unsafe {
-        let old_style = GetWindowLongW(hwnd.0, GWL_STYLE) as u32;
-        let borderless = (old_style &
-            !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX))
-            | WS_POPUP;
-        if old_style != borderless {
-            SetWindowLongW(hwnd.0, GWL_STYLE, borderless as i32);
-            if SetWindowPos(
-                hwnd.0, std::ptr::null_mut(), 0, 0, 0, 0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
-            ) == 0 {
-                return Err("Windows не дозволив прибрати системну рамку.".into());
+        let old = GetWindowLongW(hwnd.0, GWL_STYLE) as u32;
+        let desired = (old & !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU |
+            WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_POPUP;
+        let old_ex = GetWindowLongW(hwnd.0, GWL_EXSTYLE) as u32;
+        let desired_ex = (old_ex & !(WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE |
+            WS_EX_STATICEDGE | WS_EX_DLGMODALFRAME | WS_EX_APPWINDOW))
+            | WS_EX_TOOLWINDOW;
+        if old != desired { SetWindowLongW(hwnd.0, GWL_STYLE, desired as i32); }
+        if old_ex != desired_ex { SetWindowLongW(hwnd.0, GWL_EXSTYLE, desired_ex as i32); }
+        // DWM must not draw the caption/buttons even if the nonclient frame is
+        // temporarily re-created during a WebView2 material/theme transition.
+        let policy: i32 = DWMNCRP_DISABLED;
+        let _ = DwmSetWindowAttribute(
+            hwnd.0, DWMWA_NCRENDERING_POLICY as u32,
+            (&policy as *const i32).cast(),
+            std::mem::size_of::<i32>() as u32,
+        );
+        if old != desired || old_ex != desired_ex {
+            if SetWindowPos(hwnd.0, std::ptr::null_mut(), 0, 0, 0, 0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                SWP_FRAMECHANGED) == 0 {
+                return Err("Windows не дозволив оновити рамку острова.".into());
             }
         }
     }
     Ok(())
 }
 
-/// Native full-window acrylic fills the entire rectangle of a transparent
-/// WebView2 window (including outside the capsule) and may restore native
-/// titlebar buttons. Keep the Windows compositor transparent instead; render
-/// the frosted lens only inside Aurora's rounded DOM surface.
+/// Theme changes are strictly CSS. Do not reconfigure DWM or Win32 styles
+/// while the capsule is animating; applying/removing native Acrylic was
+/// repainting the whole WebView and occasionally reviving a system caption.
 #[tauri::command]
 pub fn set_native_material(window: tauri::WebviewWindow, theme: String) -> Result<(), String> {
-    #[cfg(windows)] {
-        let _ = theme;
-        // Revert any acrylic left by earlier Aurora sessions or theme switches.
-        let _ = window_vibrancy::clear_acrylic(&window);
-        window.set_decorations(false).map_err(|e| e.to_string())?;
-        ensure_borderless(&window)
-    }
-    #[cfg(not(windows))] {
-        let _ = (window, theme);
-        Ok(())
-    }
+    let _ = theme;
+    #[cfg(windows)] { ensure_borderless(&window) }
+    #[cfg(not(windows))] { let _ = window; Ok(()) }
 }
