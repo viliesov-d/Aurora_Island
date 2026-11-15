@@ -86,3 +86,35 @@ pub fn set_native_material(window: tauri::WebviewWindow, theme: String) -> Resul
     #[cfg(windows)] { ensure_borderless(&window) }
     #[cfg(not(windows))] { let _ = window; Ok(()) }
 }
+
+/// Same-monitor fullscreen policy adapted from Atoll (see THIRD_PARTY_NOTICES.md).
+#[tauri::command]
+pub fn sync_window_environment(window: tauri::WebviewWindow, enabled: bool) -> Result<bool, String> {
+    let mut fullscreen = false;
+    #[cfg(windows)] unsafe {
+        use windows_sys::Win32::{Foundation::RECT, Graphics::Gdi::*, UI::WindowsAndMessaging::*};
+        let ours = window.hwnd().map_err(|e| e.to_string())?.0;
+        let foreground = GetForegroundWindow();
+        if enabled && !foreground.is_null() && foreground != ours && IsIconic(foreground) == 0 {
+            let mut class = [0u16; 128];
+            let len = GetClassNameW(foreground, class.as_mut_ptr(), class.len() as i32);
+            let class = String::from_utf16_lossy(&class[..len.max(0) as usize]);
+            let shell = matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" |
+                "Shell_SecondaryTrayWnd" | "Windows.UI.Core.CoreWindow" | "XamlExplorerHostIslandWindow");
+            let monitor = MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST);
+            if !shell && monitor == MonitorFromWindow(ours, MONITOR_DEFAULTTONEAREST) {
+                let mut info: MONITORINFO = std::mem::zeroed();
+                info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+                let mut rect: RECT = std::mem::zeroed();
+                if GetMonitorInfoW(monitor, &mut info) != 0 && GetWindowRect(foreground, &mut rect) != 0 {
+                    let bounds = info.rcMonitor;
+                    fullscreen = rect.left <= bounds.left && rect.top <= bounds.top &&
+                        rect.right >= bounds.right && rect.bottom >= bounds.bottom;
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))] let _ = enabled;
+    window.set_ignore_cursor_events(fullscreen).map_err(|e|e.to_string())?;
+    Ok(fullscreen)
+}

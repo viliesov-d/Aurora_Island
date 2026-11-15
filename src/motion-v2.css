@@ -3,6 +3,7 @@
    No width/height layout animation, no CSS box shadow outside the island. */
 html,body,#root,.app,.island{background:transparent!important}
 .app{isolation:isolate;overflow:hidden}
+.app.fullscreen-hidden{opacity:0;pointer-events:none}
 .island{isolation:isolate;overflow:visible}
 
 /* The shell ALWAYS has the full panel geometry; only its visible clip changes. */

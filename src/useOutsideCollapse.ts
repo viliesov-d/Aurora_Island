@@ -54,9 +54,12 @@ export function useOutsideCollapse(
         // Give the window resizing and entry spring time to complete.
         if (now-started < 380) { outsideSince=null; return; }
         if (!outside) { outsideSince=null; return; }
-        if (editingText()) { outsideSince=null; return; }
+        // An outside click remains intentional even if WebView retained an
+        // input as activeElement after another Windows app took focus.
+        if (justPressed) { outsideSince=null; callback.current(); return; }
+        if (mouseDown || (editingText() && document.hasFocus())) { outsideSince=null; return; }
         if (outsideSince===null) outsideSince=now;
-        if (justPressed || (autoHide && now-outsideSince>420)) {
+        if (autoHide && now-outsideSince>420) {
           outsideSince=null;
           callback.current();
         }

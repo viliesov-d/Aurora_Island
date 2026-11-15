@@ -34,7 +34,7 @@ npm run tauri -- build --bundles nsis
 
 ## Ліцензії
 
-Власний код проєкту: MIT. Всі залежності зберігають свої ліцензії; див. відповідні записи пакетів Cargo/npm. Референсні репозиторії використані для ознайомлення з UX і Windows/Tauri архітектурними підходами, їхній код не скопійований.
+Власний код проєкту: MIT. Всі залежності зберігають свої ліцензії; див. відповідні записи пакетів Cargo/npm. Політика fullscreen адаптована з Atoll для Tauri/Rust; ліцензія й атрибуція містяться у `THIRD_PARTY_NOTICES.md`.
 
 
 ## Покращення взаємодії (v0.2)
@@ -157,3 +157,17 @@ This is a **replacement of the interaction architecture**, not another spring/bl
 - The previous `motion.div layout="size"` that animated width and height while Win32 resized has been removed.
 
 **Windows acceptance checklist:** (1) no titlebar on startup, theme switch, tray restore or hotkey; (2) no rectangle/shadows around island in Classic/Glass/Soft/Neon even over a bright wallpaper; (3) never expands on hover; (4) repeated clicks open/close without skipped/missed frames; (5) magnetic contour is smooth at corners and returns to rest; (6) keyboard and mouse controls still work; (7) Windows scaling 100%/125%/150%/200%; (8) windows outside the hit region still receive clicks. Windows installer CI validates compilation, not these visual behaviors.
+
+## Windows behavior follow-up (based on PR #10)
+
+- Repeated open requests no longer cancel the pending native preparation. Escape or a second click can cancel preparation; stale completion cannot reopen or unlock a newer request.
+- Fixed viewport uses the monitor work area, including small displays and negative desktop coordinates. A saved location on a connected secondary monitor is restored there; DPI changes recalculate size and mask without resizing on ordinary open/close.
+- Compact mode does not activate the window. Expanded inputs remain focusable. Outside clicks close even if WebView retains an input as its active element; holding the mouse button avoids automatic collapse while dragging.
+- Atoll-style fullscreen suppression applies only on the island's monitor and excludes desktop/taskbar shell windows. The transparent surface becomes click-through. The behavior can be disabled in Settings.
+- Reduced motion disables the content fade as well as shell motion. Saved speed/radius values are validated; the speed slider spans the full animation duration range.
+
+Verification: `npm test` (Node 22.18+), `npm run build`, and Windows installer CI. The local sandbox requires `npm run build -- --configLoader runner` because esbuild cannot inspect parent directories.
+
+Manual acceptance on Windows 10/11: rapid double click/open/Escape, drag while open, text input plus outside click, tray/hotkey restore, all themes, reduced motion, 100/125/150/200% DPI, a secondary monitor left of the primary, and fullscreen video on each monitor. Compilation alone does not certify animation smoothness or system-window focus behavior.
+
+This adapts the core island shell behavior. Atoll's OCR/QR, lyrics, Discord side-pill, characters, FPS, calendar/ICS and update service are separate features and are not claimed as implemented here.

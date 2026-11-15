@@ -130,7 +130,14 @@ fn set_native_region(
     pill_width: f64,
     radius: f64,
     hidden: Option<bool>,
+    panel_radius: Option<f64>,
 ) -> Result<(), String> {
+    let panel_radius = panel_radius.unwrap_or(26.0);
+    if !pill_width.is_finite() || !(240.0..=340.0).contains(&pill_width)
+        || !radius.is_finite() || !(18.0..=38.0).contains(&radius)
+        || !panel_radius.is_finite() || !(0.0..=60.0).contains(&panel_radius) {
+        return Err("Некоректні розміри острова.".into());
+    }
     #[cfg(windows)]
     unsafe {
         use windows_sys::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
@@ -152,7 +159,7 @@ fn set_native_region(
             // the animated bridge between compact and expanded states.
             CreateRoundRectRgn(
                 px(12.0), px(7.0), width - px(12.0), height - px(15.0),
-                px(58.0), px(58.0),
+                px(panel_radius*2.0), px(panel_radius*2.0),
             )
         } else {
             let w = px(pill_width.min(size.width as f64 / scale));
@@ -175,6 +182,13 @@ fn set_native_region(
                     return Err("Не вдалося застосувати форму вікна.".into());
                 }
                 // Windows owns region after SetWindowRgn succeeds.
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
+                };
+                let style = GetWindowLongW(hwnd.0, GWL_EXSTYLE) as u32;
+                // Compact activities must not steal focus from the current app.
+                let desired = if expanded { style & !WS_EX_NOACTIVATE } else { style | WS_EX_NOACTIVATE };
+                if desired != style { SetWindowLongW(hwnd.0, GWL_EXSTYLE, desired as i32); }
             }
             Err(err) => {
                 let _ = DeleteObject(region);
@@ -232,7 +246,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![appearance::cursor_position, appearance::set_native_material, notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
+        .invoke_handler(tauri::generate_handler![appearance::sync_window_environment, appearance::cursor_position, appearance::set_native_material, notify_user, set_global_hotkey, clipboard::clipboard_snapshot, clipboard::clipboard_write, system_info, save_api_key, has_api_key, stream_chat, set_startup, hide_to_tray, set_native_region, open_personal_chatgpt, audio::media_state, audio::media_control, audio::get_volume, audio::set_volume, audio::set_mute])
         .setup(|app| {
             // A shortcut collision never prevents the island from starting.
             if let Err(err) = set_global_hotkey(app.handle().clone(), true) {
