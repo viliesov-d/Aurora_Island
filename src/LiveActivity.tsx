@@ -38,7 +38,7 @@ export function CompactActivity({activity, count}:{activity:Activity;count:numbe
   const Icon=activity.icon;
   return <div className="live-activity" title={activity.title+" · прокрутіть для інших активностей"}
     aria-label={activity.title+" "+activity.detail}>
-      <div className="live-icon"><Icon size={16}/></div>
+      <div className="live-icon">{activity.id==="music"?<span className="live-equalizer" aria-hidden="true"><i/><i/><i/></span>:<Icon size={16}/>}</div>
       <div className="live-meta"><b>{activity.title}</b><span>{activity.detail}</span></div>
       {typeof activity.progress==="number"&&<span className="live-ring" style={{"--progress":String(Math.round(activity.progress*100))+"%"} as React.CSSProperties}/>}
       {count>1&&<small className="live-count">{count}</small>}
