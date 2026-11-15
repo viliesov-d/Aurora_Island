@@ -88,12 +88,13 @@ mod native {
             GlobalUnlock(allocated);
         }
         // The caller owns allocated until SetClipboardData succeeds.
-        let opened = OpenedClipboard::new();
-        if let Err(err) = opened {
-            unsafe { GlobalFree(allocated); }
-            return Err(err);
-        }
-        let _opened = opened.unwrap();
+        let _opened = match OpenedClipboard::new() {
+            Ok(clipboard) => clipboard,
+            Err(err) => {
+                unsafe { GlobalFree(allocated); }
+                return Err(err);
+            }
+        };
         if unsafe { EmptyClipboard() } == 0 {
             unsafe { GlobalFree(allocated); }
             return Err("Не вдалося очистити буфер обміну.".into());
