@@ -122,13 +122,13 @@ pub async fn capture_screen(window: tauri::WebviewWindow) -> Result<ScreenCaptur
         // Give DWM enough time to remove the island from the desktop image.
         tokio::time::sleep(std::time::Duration::from_millis(220)).await;
         let result = tauri::async_runtime::spawn_blocking(grab_primary_screen)
-            .await.map_err(|e| e.to_string())?;
+            .await.map_err(|e| e.to_string());
         if was_visible {
-            // Restore even when capture itself failed.
+            // Restore even if the worker panics, fails or returns an error.
             let restore = window.show().and_then(|_| window.set_focus()).map_err(|e| e.to_string());
             if let Err(err) = restore { return Err(format!("Не вдалося відновити острів: {err}")); }
         }
-        result
+        result?
     }
     #[cfg(not(windows))] {
         let _ = window;
