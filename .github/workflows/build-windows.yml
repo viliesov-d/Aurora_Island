@@ -2,7 +2,7 @@ name: Build Windows installer
 on:
   workflow_dispatch:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "feat/island-toolbox-2026-11-15"]
   push:
     branches: ["main"]
     tags: ["v*"]
