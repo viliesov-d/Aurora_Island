@@ -84,3 +84,39 @@
 .media-refresh{margin-top:auto;align-self:center;color:#a9a7b7;font-size:11px;padding:8px 15px;border-radius:12px;border:1px solid #ffffff13}
 .media-refresh:hover{background:#ffffff0d;color:white}
 .media-error{font-size:11px;color:#ff9eae;overflow-wrap:anywhere;padding:8px;background:#ff4f6210;border-radius:10px}
+
+
+/* Aurora toolbox: compact but readable at 125–200% desktop scaling. */
+.tabs{overflow-x:auto;scrollbar-width:none;flex-shrink:0}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{white-space:nowrap;flex-shrink:0;padding:8px 9px}
+.toolbox{display:flex;flex-direction:column;gap:10px;min-height:100%;font-size:12px;color:#e8e8f1}
+.tool-tabs{display:flex;gap:5px;overflow-x:auto;padding-bottom:7px;scrollbar-width:thin}
+.tool-tabs button{white-space:nowrap;border-radius:9px;background:#ffffff0b;color:#a6a5ba;padding:7px 10px;font-size:11px}
+.tool-tabs button.selected{background:color-mix(in srgb,var(--accent),transparent 78%);color:#fff}
+.tool-section{display:flex;flex-direction:column;gap:10px}
+.tool-heading{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700}
+.tool-heading>button{margin-left:auto;font-size:11px}
+.tool-help{font-size:11px;color:#a7a6b9;line-height:1.55;margin:0}
+.tool-inline{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tool-inline input{min-width:65px;flex:1}
+.tool-section input,.tool-textarea{outline:none;border:1px solid #ffffff19;border-radius:10px;background:#ffffff0c;color:inherit;padding:10px;min-width:0;font:inherit}
+.tool-section input:focus,.tool-textarea:focus{border-color:var(--accent)}
+.tool-inline button,.tool-item button,.tool-heading button,.tool-quiet,.tool-upload,.tool-action-grid button{background:#ffffff13;border:1px solid #ffffff10;border-radius:9px;padding:8px 10px;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:11px}
+.tool-inline button:hover,.tool-item button:hover,.tool-action-grid button:hover{background:#ffffff24}
+.tool-inline button:disabled{opacity:.45;cursor:not-allowed}
+.tool-item{display:flex;align-items:center;gap:7px;border:1px solid #ffffff13;background:#ffffff08;border-radius:11px;padding:7px;min-width:0}
+.tool-item>span{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:70px;overflow:hidden;font-size:11px}
+.tool-item button{flex-shrink:0;padding:6px}
+.tool-notice{border:1px solid #9b94ff45;border-radius:9px;padding:8px;color:#d2cfff;font-size:11px}
+.tool-input{width:100%}
+.tool-textarea{width:100%;min-height:110px;resize:vertical;user-select:text}
+.tool-note{min-height:220px}
+.tool-saved{margin-left:auto;font-size:10px;color:#8ddeb9;display:inline-flex;align-items:center;gap:4px;font-weight:400}
+.tool-upload{cursor:pointer;align-self:flex-start}
+.tool-upload input{display:none}
+.tool-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.tool-action-grid button{padding:8px 3px}
+.tool-weather{display:flex;flex-direction:column;gap:5px;padding:15px;background:#ffffff0b;border-radius:14px}
+.tool-weather strong{font-size:42px;line-height:1.1}
+.tool-weather span{color:#aaa9bb;font-size:11px}
