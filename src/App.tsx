@@ -351,7 +351,7 @@ export default function App() {
         onPointerUp={endDrag} onPointerCancel={endDrag}
         onClick={e=>{if(e.target===e.currentTarget&&!suppressClick.current)invokeMode(!expanded);suppressClick.current=false;}}
         onWheel={e=>{if(!expanded)live.rotate(e)}}>
-        <span className="magnetic-edge" aria-hidden="true" />
+        <svg className="magnetic-svg" aria-hidden="true" focusable="false"><path className="magnetic-shape" /></svg>
         <button type="button" className="drag-handle" onPointerDown={beginDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button>
         <button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={()=>invokeMode(!expanded)}>
           <span className="brand-mark"><Sparkles size={14}/></span>
