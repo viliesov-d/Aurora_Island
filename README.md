@@ -133,3 +133,13 @@ Not implemented by this foundational milestone: Atoll's complete multi-page feat
 - Opened as stacked PR from the Atoll mechanics branch; does not modify the default branch until Windows QA.
 
 **Manual QA:** verify no OS titlebar; no grey rectangle outside compact/expanded capsule with high contrast wallpaper; click-through; expanding/collapsing and dragging; all four themes; switching between styles; readability and text wrapping; Windows 10 and 11 at 100/125/150% scaling. Test native Windows behavior on the installed .exe; browser/TypeScript build alone is not enough.
+
+## Stage after the window hotfix: system volume/media HUD
+
+- Aurora now checks *Windows system output volume* at a moderate, fixed interval (650ms) while shown. Changing the system volume or mute state through a keyboard/media key displays a compact, short-lived indicator. The first sample never triggers a notification.
+- When Windows Media Session reports a new playing track, the collapsed island briefly displays its title (up to 32 characters); the compact media badge has a lightweight CSS equalizer.
+- User-initiated volume changes *inside Aurora* suppress duplicate sound toasts. The effect is disabled automatically when the island is hidden and can be turned off in Settings > Behavior > "Системний HUD: гучність і нова музика".
+- There is **no audio recording, microphone access, image capture or network transmission** for this feature.
+- This is a focused initial system-events milestone inspired by Atoll; fullscreen/game handling, mic/camera privacy badges, downloads and third-party notifications are separate follow-ups.
+
+**Test on Windows:** volume up/down/mute with hardware keys, paused music, new track, startup, hidden/restored island, disable HUD, reduced-motion animations. In particular, ensure that a music title change is never misreported as a system notification from a different app.
