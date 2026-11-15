@@ -16,7 +16,9 @@ export function magneticPath(w:number,h:number,pull:Pull,x:number,y:number) {
   const r=h/2;
   const left=clamp(pull.left,0,1.06)*13;
   const right=clamp(pull.right,0,1.06)*13;
-  const top=clamp(pull.top,0,1.06)*13;
+  // The pill begins 8px below the top of WebView2; keep its upper pull
+  // within that physical paint margin instead of clipping the vector.
+  const top=clamp(pull.top,0,1.06)*7.2;
   const bottom=clamp(pull.bottom,0,1.06)*13;
   const tx=clamp(x,r+47,w-r-47),bx=tx;
   const ry=h/2+clamp(y-h/2,-h*.12,h*.12)*clamp(right/13,0,1);
