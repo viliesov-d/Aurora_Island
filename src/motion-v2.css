@@ -1,0 +1,171 @@
+/* Aurora motion engine v2.
+   One fixed native WebView; one rounded clip-path expands the SAME surface.
+   No width/height layout animation, no CSS box shadow outside the island. */
+html,body,#root,.app,.island{background:transparent!important}
+.app{isolation:isolate;overflow:hidden}
+.island{isolation:isolate;overflow:visible}
+
+/* The shell ALWAYS has the full panel geometry; only its visible clip changes. */
+.island .island-morph{
+  position:absolute;
+  z-index:1;
+  left:50%;
+  top:8px;
+  translate:-50% 0;
+  width:calc(100% - 28px);
+  height:calc(100vh - 24px);
+  min-height:0;
+  border:0!important;
+  border-radius:var(--panel-radius);
+  overflow:hidden;
+  isolation:isolate;
+  contain:paint;
+  transform:translateZ(0);
+  background:transparent!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  box-shadow:none!important;
+  filter:none!important;
+  clip-path:inset(0 calc((100% - var(--island-width))/2)
+    calc(100% - 44px) calc((100% - var(--island-width))/2)
+    round var(--island-radius));
+  transition:clip-path var(--morph-duration,520ms) cubic-bezier(.21,.78,.20,1);
+  will-change:clip-path;
+}
+.app.is-open .island .island-morph{
+  width:calc(100% - 28px);
+  height:calc(100vh - 24px);
+  border-radius:var(--panel-radius);
+  clip-path:inset(0 0 0 0 round var(--panel-radius));
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.island .island-morph::before,.island .island-morph::after{
+  content:none!important;
+  box-shadow:none!important;
+}
+.island .morph-layer,.island .morph-rim{
+  position:absolute;inset:0;pointer-events:none;
+}
+.island .morph-compact{
+  background:var(--pill-surface);
+  opacity:1;
+  transition:opacity 290ms cubic-bezier(.22,1,.36,1);
+}
+.island .morph-full{
+  background:var(--panel-surface);
+  opacity:0;
+  transition:opacity 310ms cubic-bezier(.22,1,.36,1);
+}
+.app.is-open .island .morph-compact{opacity:0}
+.app.is-open .island .morph-full{opacity:1}
+.island .morph-rim{
+  border-radius:inherit;
+  background:linear-gradient(140deg,#ffffff22,transparent 30%,transparent 73%,#ffffff0b);
+  box-shadow:inset 0 1px 0 #ffffff40!important;
+  opacity:.5;
+}
+.island.theme-glass .morph-rim{
+  background:
+    radial-gradient(ellipse 47% 11% at var(--lens-x,50%) 0%,#ffffff47,transparent 100%),
+    linear-gradient(140deg,#ffffff27,transparent 30%,transparent 78%,#cbdfff18);
+  box-shadow:inset 0 1px 0 #ffffff5b!important;
+  opacity:.85;
+}
+.island.theme-soft .morph-rim{opacity:.34}
+.island.theme-neon .morph-rim{opacity:.6}
+/* No DWM/Acrylic shadow, no outer CSS drop-shadow for any style. */
+.island .pill,.island .panel,.island .island-morph,
+.island.theme-glass .pill,.island.theme-glass .panel,.island.theme-glass .island-morph,
+.island.theme-soft .pill,.island.theme-soft .panel,.island.theme-soft .island-morph,
+.island.theme-neon .pill,.island.theme-neon .panel,.island.theme-neon .island-morph,
+.island.theme-classic .pill,.island.theme-classic .panel,.island.theme-classic .island-morph{
+  box-shadow:none!important;
+  filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.island .pill{
+  z-index:3;
+  position:relative;
+  border:1px solid #ffffff26!important;
+  border-radius:var(--island-radius);
+  background:transparent!important;
+  box-shadow:none!important;
+  transition:opacity 190ms cubic-bezier(.22,1,.36,1);
+}
+.island.theme-soft .pill{border-color:#61728235!important}
+.island.theme-neon .pill{border-color:#c28aff76!important}
+.app.is-open .island .pill{
+  opacity:0;
+  transform:none;
+  pointer-events:none;
+  transition:opacity 160ms ease-out;
+}
+.island .pill::before{opacity:.34}
+.island .pill::after{opacity:.14}
+.island .magnetic-svg{
+  left:-20px;top:-20px;
+  width:calc(100% + 40px);height:calc(100% + 40px);
+  filter:none!important;overflow:visible;pointer-events:none;
+}
+.island .magnetic-shape{
+  fill:var(--magnetic-fill);
+  stroke:var(--surface-hairline);
+  stroke-width:1px;
+  vector-effect:non-scaling-stroke;
+}
+.island .panel,
+.app.is-open .island .panel{
+  left:14px;
+  top:8px;
+  width:calc(100% - 28px);
+  height:calc(100vh - 24px);
+  border:0!important;
+  background:transparent!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  box-shadow:none!important;
+  overflow:hidden;
+  transform:none;
+}
+.island .panel::before,.island .panel::after{
+  background:none!important;
+  box-shadow:none!important;
+}
+.island .panel-body{overflow-y:auto;overflow-x:hidden;min-height:0}
+.island .panel-head{min-height:58px}
+.island .panel-body>*{animation:aurora-content-v2 300ms cubic-bezier(.22,1,.36,1) both}
+@keyframes aurora-content-v2{
+  from{opacity:0;transform:translate3d(0,7px,0)}
+  to{opacity:1;transform:translate3d(0,0,0)}
+}
+.island .tool-command-action,.island .mini-card,.island .icon-btn,
+.island .theme-option,.island .tabs button{
+  transition:transform 230ms cubic-bezier(.22,1,.36,1),
+    background-color 220ms ease,border-color 220ms ease,color 180ms ease!important;
+}
+.island .panel .tabs button:active,.island .mini-card:active{transform:scale(.985)}
+.island.theme-glass .settings-section{
+  background:rgba(21,31,50,.68);
+}
+.island.theme-glass .morph-full{
+  background:linear-gradient(144deg,rgba(61,84,114,.95),
+    rgba(23,35,56,.97) 53%,rgba(13,22,39,.98));
+}
+.island.theme-glass .morph-compact{
+  background:linear-gradient(143deg,rgba(68,93,125,.93),
+    rgba(23,37,58,.95) 58%,rgba(17,29,48,.96));
+}
+/* Do not animate filters/shadows or the font-rasterizing panel itself. */
+.island .panel-head,.island .panel-body,.island .tabs{
+  will-change:auto;
+  filter:none!important;
+}
+.island .island-restore{box-shadow:none!important}
+@media (prefers-reduced-motion:reduce){
+  .island .island-morph,.island .morph-layer,.island .pill,
+  .island .panel,.island .panel-body>*{
+    transition:none!important;animation:none!important;will-change:auto!important;
+  }
+}
