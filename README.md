@@ -92,3 +92,15 @@ For Windows validation, also run `npm run tauri -- build --bundles nsis`, then m
 - **Scope:** this is not a native notification listener for *other apps* and it does not collect system notification contents. Those require a separate implementation with user consent.
 
 Windows-specific testing: install the NSIS artifact, copy Unicode text in another app, enable monitoring and verify transient history, pin to preserve, press `Ctrl+Alt+Space` outside Aurora, test while hidden in tray, set a 1-minute reminder, and test the native toast button. Also test at 125%/150% display scaling.
+
+
+## Етап 5A — знімки екрана та піпетка кольору
+
+У «Інструменти → Екран» доступні:
+
+- **Зробити знімок:** лише після натискання кнопки. Aurora тимчасово приховує своє вікно та захоплює *основний* монітор за допомогою Win32 GDI; ніякого фонового запису чи відправлення зображень в інтернет.
+- **Вибір області:** затисніть ліву кнопку та протягніть по мініатюрі; можна зберегти PNG виділеної області або всього знімка.
+- **Піпетка:** наведення/клік на знімку показує колір в форматі HEX; кнопка копіює його в буфер обміну Windows.
+- **Збереження:** PNG записується в системну папку «Завантаження» лише після натискання кнопки. До збереження пікселі знаходяться у пам'яті процесу та не надсилаються на сервер.
+
+**Обмеження:** захоплення додаткових моніторів, виділення без попереднього знімка прямо поверх робочого столу, OCR, QR та запис відео ще не реалізовані. DRM-захищені вікна можуть відображатися чорними. Ліміт знімка — 20 млн пікселів. Windows CI підтверджує компіляцію, а ручна перевірка в реальному Windows потрібна для якості знімків, DPI 125/150%, збереження та буфера обміну.

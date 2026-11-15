@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Reminders } from "./Reminders";
+import { ScreenTools } from "./ScreenTools";
 import { nativeRead, nativeCopy, getLiveClips, removeLiveClip, clearLiveClips, LIVE_CLIPS_EVENT, type ClipboardRecord } from "./nativeIntegration";
 import { Clipboard, Copy, FileText, FolderOpen, Globe2, Search, StickyNote, Trash2, WandSparkles, Check, Plus } from "lucide-react";
 
-type Tool = "clipboard" | "shelf" | "text" | "notes" | "weather" | "launcher" | "reminders";
+type Tool = "clipboard" | "shelf" | "text" | "notes" | "weather" | "launcher" | "reminders" | "screen";
 type Clip = ClipboardRecord;
 type LinkEntry = { id: number; label: string; url: string };
 const store = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };
@@ -79,7 +80,7 @@ export function Toolbox({ onAskAI }: { onAskAI: (text: string) => void }) {
       localStorage.setItem("aurora:weather-city",JSON.stringify(city));
     } catch(e) {setNotice("Погода: "+String(e));} finally{clearTimeout(timeout);setWeatherBusy(false);}
   };
-  const tabs: {id:Tool; name:string}[] = [{id:"clipboard",name:"Буфер"},{id:"shelf",name:"Файли"},{id:"text",name:"Текст"},{id:"notes",name:"Нотатки"},{id:"weather",name:"Погода"},{id:"launcher",name:"Посилання"},{id:"reminders",name:"Нагадування"}];
+  const tabs: {id:Tool; name:string}[] = [{id:"clipboard",name:"Буфер"},{id:"shelf",name:"Файли"},{id:"text",name:"Текст"},{id:"notes",name:"Нотатки"},{id:"weather",name:"Погода"},{id:"launcher",name:"Посилання"},{id:"reminders",name:"Нагадування"},{id:"screen",name:"Екран"}];
   return <div className="toolbox">
     <div className="tool-tabs">{tabs.map(t=><button key={t.id} className={tool===t.id?"selected":""} onClick={()=>{setTool(t.id);setNotice("");}}>{t.name}</button>)}</div>
     {notice&&<div className="tool-notice" role="status">{notice}</div>}
@@ -116,6 +117,7 @@ export function Toolbox({ onAskAI }: { onAskAI: (text: string) => void }) {
       <p className="tool-help">Дані Open-Meteo. Локація визначається тільки за введеною назвою міста.</p>
     </div>}
     {tool==="reminders"&&<Reminders/>}
+    {tool==="screen"&&<ScreenTools/>}
     {tool==="launcher"&&<div className="tool-section">
       <div className="tool-heading"><Search size={16}/> Швидкі посилання</div>
       {links.map(l=><div key={l.id} className="tool-item"><Globe2 size={14}/><span>{l.label}</span><button onClick={()=>{const url=urlSafe(l.url);if(url) window.open(url,"_blank","noopener,noreferrer");}}>Відкрити</button><button onClick={()=>setLinks(v=>v.filter(x=>x.id!==l.id))}><Trash2 size={14}/></button></div>)}
