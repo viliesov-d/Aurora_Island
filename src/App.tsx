@@ -36,6 +36,11 @@ function loadPrefs(): Preferences {
   } catch { return defaults; }
 }
 function readMessages(): Message[] { try { return JSON.parse(localStorage.getItem("aurora:chat") || "null") || initialMessages; } catch { return initialMessages; } }
+function applyNativeRegion(args:{expanded:boolean;hidden:boolean;pillWidth:number;radius:number}) {
+  const island=document.querySelector('.island');
+  const panelRadius=island?parseFloat(getComputedStyle(island).getPropertyValue('--panel-radius')):26;
+  return invoke('set_native_region',{...args,panelRadius:Number.isFinite(panelRadius)?panelRadius:26});
+}
 
 export default function App() {
   const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false);
@@ -94,7 +99,7 @@ export default function App() {
   const morphMs = reducedMotion?0:Math.max(280, Math.min(1120, Math.round(520 * 75 / prefs.speed)));
   const updateHitRegion=useCallback((open:boolean, hide:boolean, width:number, radius:number)=>{
     layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
-      await invoke("set_native_region",{expanded:open, pillWidth:width, radius, hidden:hide});
+      await applyNativeRegion({expanded:open, pillWidth:width, radius, hidden:hide});
     });
     return layoutQueue.current;
   },[]);
@@ -126,7 +131,7 @@ export default function App() {
         {...monitor.workArea.position,...monitor.workArea.size}):{x,y,width,height};
       await w.setSize(new LogicalSize(geometry.width,geometry.height));
       await w.setPosition(new PhysicalPosition(Math.round(geometry.x),Math.round(geometry.y)));
-      await invoke("set_native_region",{
+      await applyNativeRegion({
         expanded:false,pillWidth:prefs.width,radius:prefs.radius,hidden,
       });
       // Material and borderless state must finish BEFORE the window is shown,
@@ -179,7 +184,7 @@ export default function App() {
         await w.setSize(new LogicalSize(geometry.width,geometry.height));
         await w.setPosition(new PhysicalPosition(geometry.x,geometry.y));
         const next=latestLayout.current;
-        await invoke('set_native_region',{expanded:next.expanded,hidden:next.hidden,pillWidth:next.width,radius:next.radius});
+        await applyNativeRegion({expanded:next.expanded,hidden:next.hidden,pillWidth:next.width,radius:next.radius});
       });
       void layoutQueue.current.catch(e=>{if(active)setError(String(e));});
     }).then(unlisten=>{if(active)dispose=unlisten;else unlisten();}).catch(console.warn);
@@ -221,7 +226,8 @@ export default function App() {
     if(hidden){
       void updateHitRegion(false,true,prefs.width,prefs.radius);
     }else if(expanded){
-      // Open requests already switched the native hit mask before React morph.
+      // Theme radii differ; refresh the mask when switching appearance in-place.
+      void updateHitRegion(true,false,prefs.width,prefs.radius).catch(e=>setError(String(e)));
     }else if(wasOpen){
       // Wait for CSS clip-path animation to finish before tightening hit tests.
       collapseResizeTimer.current=window.setTimeout(()=>{
@@ -232,7 +238,7 @@ export default function App() {
       void updateHitRegion(false,false,prefs.width,prefs.radius);
     }
     return()=>window.clearTimeout(collapseResizeTimer.current);
-  },[expanded,hidden,prefs.width,prefs.radius,morphMs,updateHitRegion]);
+  },[expanded,hidden,prefs.width,prefs.radius,prefs.theme,morphMs,updateHitRegion]);
   // Theme changes are paint-only; touching Win32 non-client flags here caused
   // intermittent titlebar flashes. Borderless is initialized once and
   // reasserted natively on focus and tray/global-hotkey restore.

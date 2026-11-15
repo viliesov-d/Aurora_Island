@@ -130,9 +130,12 @@ fn set_native_region(
     pill_width: f64,
     radius: f64,
     hidden: Option<bool>,
+    panel_radius: Option<f64>,
 ) -> Result<(), String> {
+    let panel_radius = panel_radius.unwrap_or(26.0);
     if !pill_width.is_finite() || !(240.0..=340.0).contains(&pill_width)
-        || !radius.is_finite() || !(18.0..=38.0).contains(&radius) {
+        || !radius.is_finite() || !(18.0..=38.0).contains(&radius)
+        || !panel_radius.is_finite() || !(0.0..=60.0).contains(&panel_radius) {
         return Err("Некоректні розміри острова.".into());
     }
     #[cfg(windows)]
@@ -156,7 +159,7 @@ fn set_native_region(
             // the animated bridge between compact and expanded states.
             CreateRoundRectRgn(
                 px(12.0), px(7.0), width - px(12.0), height - px(15.0),
-                px(58.0), px(58.0),
+                px(panel_radius*2.0), px(panel_radius*2.0),
             )
         } else {
             let w = px(pill_width.min(size.width as f64 / scale));
