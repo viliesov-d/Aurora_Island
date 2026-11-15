@@ -124,47 +124,68 @@ fn open_personal_chatgpt() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_native_region(window: tauri::WebviewWindow, expanded: bool, pill_width: f64, radius: f64) -> Result<(), String> {
-    #[cfg(windows)] unsafe {
-        use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR};
-        let scale = window.scale_factor().map_err(|e|e.to_string())?;
-        let size = window.inner_size().map_err(|e|e.to_string())?;
-        let px = |n:f64| (n*scale).round() as i32;
-        let w = px(pill_width.min(size.width as f64 / scale));
-        let h = size.height as i32;
-        let left = ((size.width as i32 - w) / 2).max(0);
-        // Overscan the *input mask* by 7-10 DIP around the actual CSS shell.
-        // The old mask cut through anti-aliased pixels at the visible rounded edge.
-        // Keep the mask narrow enough to avoid intercepting desktop clicks elsewhere.
-        let pill = CreateRoundRectRgn(
-            (left - px(10.0)).max(0), px(1.0),
-            (left + w + px(10.0)).min(size.width as i32), px(60.0),
-            px((radius + 10.0) * 2.0), px((radius + 10.0) * 2.0)
-        );
-        if pill.is_null() { return Err("Не вдалося створити маску острова.".into()); }
-        let region = if expanded {
-            // CSS panel lives at x=14, y=66 and has a 16px bottom gutter.
-            let card = CreateRoundRectRgn(
-                px(8.0), px(60.0), size.width as i32 - px(8.0), h - px(9.0),
-                px(64.0), px(64.0)
-            );
-            let union = CreateRoundRectRgn(0, 0, 1, 1, 1, 1);
-            if card.is_null() || union.is_null() {
-                let _ = DeleteObject(pill);
-                if !card.is_null() { let _ = DeleteObject(card); }
-                if !union.is_null() { let _ = DeleteObject(union); }
-                return Err("Не вдалося створити маску відкритої панелі.".into());
+fn set_native_region(
+    window: tauri::WebviewWindow,
+    expanded: bool,
+    pill_width: f64,
+    radius: f64,
+    hidden: Option<bool>,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let size = window.inner_size().map_err(|e| e.to_string())?;
+        let px = |n: f64| (n * scale).round() as i32;
+        let width = size.width as i32;
+        let height = size.height as i32;
+        let region = if hidden.unwrap_or(false) {
+            // Slender recovery handle at the top of the desktop, always clickable.
+            CreateRoundRectRgn(
+                (width / 2 - px(76.0)).max(0), 0,
+                (width / 2 + px(76.0)).min(width), px(30.0),
+                px(18.0), px(18.0),
+            )
+        } else if expanded {
+            // One smooth hit region around the morphing *whole* island.
+            // Unlike the previous disjoint pill + card regions, it cannot clip
+            // the animated bridge between compact and expanded states.
+            CreateRoundRectRgn(
+                px(7.0), px(3.0), width - px(7.0), height - px(7.0),
+                px(66.0), px(66.0),
+            )
+        } else {
+            let w = px(pill_width.min(size.width as f64 / scale));
+            let left = (width - w) / 2;
+            // The elastic outline may reach up to 17 DIP beyond the shell;
+            // leave a 23 DIP overscan so the visible deformation is not clipped.
+            CreateRoundRectRgn(
+                (left - px(23.0)).max(0), 0,
+                (left + w + px(23.0)).min(width), px(80.0),
+                px((radius + 23.0) * 2.0), px((radius + 23.0) * 2.0),
+            )
+        };
+        if region.is_null() {
+            return Err("Не вдалося створити маску Aurora.".into());
+        }
+        match window.hwnd() {
+            Ok(hwnd) => {
+                if SetWindowRgn(hwnd.0, region, 1) == 0 {
+                    let _ = DeleteObject(region);
+                    return Err("Не вдалося застосувати форму вікна.".into());
+                }
+                // Windows owns region after SetWindowRgn succeeds.
             }
-            let _ = CombineRgn(union, pill, card, RGN_OR);
-            let _ = DeleteObject(pill);
-            let _ = DeleteObject(card);
-            union
-        } else { pill };
-        if let Ok(hwnd) = window.hwnd() {
-            if SetWindowRgn(hwnd.0, region, 1) == 0 { let _=DeleteObject(region); return Err("Не вдалося застосувати форму вікна.".into()); }
-        } else { let _=DeleteObject(region); }
+            Err(err) => {
+                let _ = DeleteObject(region);
+                return Err(err.to_string());
+            }
+        }
     }
-    #[cfg(not(windows))] { let _ = (window,expanded,pill_width,radius); }
+    #[cfg(not(windows))]
+    {
+        let _ = (window, expanded, pill_width, radius, hidden);
+    }
     Ok(())
 }
 

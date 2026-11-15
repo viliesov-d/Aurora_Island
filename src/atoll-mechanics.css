@@ -1,0 +1,123 @@
+/* Atoll-inspired mechanics adapted for Aurora's native Tauri window.
+ * One continuous shape morphs while page content crossfades inside it.
+ * The native window region must match this shell; see set_native_region.
+ */
+.island .island-morph{
+  position:absolute;z-index:1;left:50%;top:8px;translate:-50% 0;
+  width:var(--island-width);height:44px;border-radius:var(--island-radius);
+  background:var(--pill-surface);border:1px solid var(--surface-hairline);
+  box-shadow:0 12px 32px #0005,inset 0 1px 0 #ffffff24;
+  overflow:hidden;isolation:isolate;pointer-events:none;
+  will-change:width,height,border-radius;
+}
+.island .island-morph::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(ellipse 70% 45% at 14% 0%,#ffffff25,transparent 80%),
+             linear-gradient(130deg,#ffffff0c,transparent 33%,#aab4ff10);
+  opacity:var(--glass-strength,.65);
+}
+.island .island-morph::after{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  box-shadow:inset 0 1px 0 #ffffff29,inset 0 -2px 4px #0b122824;
+}
+.app.is-open .island .island-morph{
+  width:calc(100% - 28px);height:calc(100vh - 24px);
+  border-radius:var(--panel-radius);
+  background:var(--panel-surface);
+  box-shadow:0 24px 74px #0008,inset 0 1px 0 #ffffff34;
+}
+.island .pill{
+  background:transparent!important;border-color:transparent!important;
+  box-shadow:none!important;backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  transition:opacity .2s ease,transform .32s cubic-bezier(.2,1,.36,1);
+}
+.island .pill::before{opacity:.8}
+.island .pill::after{opacity:.6}
+.app.is-open .island .pill{opacity:0;transform:translateY(-9px) scale(.97);pointer-events:none}
+.app.is-open .island .panel{
+  top:8px;left:14px;width:calc(100% - 28px);height:calc(100vh - 24px);
+  max-height:none;z-index:3;
+  background:transparent!important;border-color:transparent!important;
+  box-shadow:none!important;backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+.island.theme-classic .island-morph{border-color:#3b414c;box-shadow:0 18px 45px #0009,inset 0 1px #ffffff16}
+.island.theme-classic .island-morph::after{box-shadow:inset 0 1px #ffffff16}
+.island.theme-glass .island-morph{
+  border-color:#e4f2ff8b;
+  background:var(--pill-surface);
+  backdrop-filter:blur(max(18px,calc(var(--glass-blur) * 1.5))) saturate(1.85);
+  -webkit-backdrop-filter:blur(max(18px,calc(var(--glass-blur) * 1.5))) saturate(1.85);
+  box-shadow:0 16px 39px #0006,inset 0 1px #ffffff8c,inset 0 -2px 7px #06152966;
+}
+.app.is-open .island.theme-glass .island-morph{background:var(--panel-surface)}
+.island.theme-glass .island-morph::before{
+  background:radial-gradient(ellipse 100% 45% at 18% 0%,#ffffff48,transparent 88%),
+    linear-gradient(160deg,#e7f6ff27,transparent 44%,#6a9bd30e 76%,#ffffff13);
+}
+.island.theme-soft .island-morph{border-color:#cbd5da;box-shadow:0 16px 40px #1e35402b,inset 0 1px #fff}
+.island.theme-soft .island-morph::after{box-shadow:inset 0 1px #ffffffef}
+.island.theme-neon .island-morph{border-color:#b87dff9c;box-shadow:0 0 1px #e8b9ff,0 0 27px #9048eb55,0 18px 49px #000b}
+.island.theme-neon .island-morph::after{box-shadow:inset 0 1px #ffffff34,inset 0 -2px 6px #ab65ff22}
+.island .magnetic-edge{z-index:0!important;filter:blur(.28px)}
+.island .pill-brand,.island .pill-status,.island .drag-handle{position:relative;z-index:4}
+.island .pill-status{gap:7px;min-width:0;max-width:calc(100% - 58px)}
+.island .live-open{padding:0;margin:0;min-width:0;max-width:185px;flex:1;display:flex;align-items:center;background:transparent;border:0;text-align:left}
+.island .live-activity{display:flex;align-items:center;gap:7px;width:100%;min-width:0;line-height:1.15}
+.island .live-icon{width:24px;height:24px;border-radius:9px;flex:none;display:grid;place-items:center;color:var(--surface-text);background:color-mix(in srgb,var(--accent),transparent 72%)}
+.island .live-meta{min-width:0;display:flex;flex-direction:column;gap:2px}
+.island .live-meta b{font-size:11px;line-height:1.1;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:117px}
+.island .live-meta span{color:var(--surface-muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:117px}
+.island .live-ring{flex:none;height:19px;width:19px;border-radius:50%;
+  background:conic-gradient(var(--accent) var(--progress,0%),#ffffff20 0);
+  mask:radial-gradient(farthest-side,transparent calc(100% - 3px),black calc(100% - 2.5px));
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),black calc(100% - 2.5px));
+}
+.island .live-count{font-size:9px;color:var(--surface-muted)}
+.island .live-toast{font-size:11px;color:var(--surface-text);font-weight:650;line-height:1.3;animation:aurora-toast-pop .35s cubic-bezier(.2,1.2,.3,1)}
+@keyframes aurora-toast-pop{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+.island .island-restore{
+  position:absolute;z-index:6;left:50%;top:3px;translate:-50% 0;
+  height:25px;width:145px;border-radius:0 0 14px 14px;
+  border:1px solid var(--surface-hairline);border-top:0;
+  background:var(--pill-surface);
+  box-shadow:0 3px 15px #0005;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+}
+.island .island-restore span{display:block;width:56px;height:5px;border-radius:4px;background:var(--surface-muted);opacity:.8;transition:width .3s,height .3s}
+.island .island-restore:hover span{width:90px;height:7px;opacity:1}
+.app.is-hidden .island-morph{display:none}
+.app.is-hidden .island{min-height:36px}
+.island .pill:active{cursor:default}
+.island .drag-handle{touch-action:none;cursor:grab}
+.island .drag-handle:active{cursor:grabbing}
+@media(prefers-reduced-motion:reduce){
+  .island .island-morph{transition:none!important;will-change:auto}
+  .island .live-toast{animation:none}
+}
+
+/* The reactive perimeter is a full rounded silhouette, not a separate bead.
+   SVG has a 22px overscan so the pull never clips at its own bounds. */
+.island .magnetic-svg{
+  position:absolute!important;left:-22px;top:-22px;
+  width:calc(100% + 44px);height:calc(100% + 44px);
+  z-index:1;pointer-events:none;overflow:visible;opacity:0;
+  filter:drop-shadow(0 4px 8px color-mix(in srgb,var(--accent),transparent 84%));
+}
+.island .magnetic-shape{
+  fill:var(--magnetic-fill);
+  stroke:var(--surface-hairline);
+  stroke-width:.9px;
+  vector-effect:non-scaling-stroke;
+}
+.island.theme-glass .magnetic-shape{stroke:#f2f8ff88;stroke-width:1.1px}
+.island.theme-soft .magnetic-shape{stroke:#bdcbd5}
+.island.theme-neon .magnetic-shape{stroke:#ce8effa0}
+@media(prefers-reduced-motion:reduce){.island .magnetic-svg{display:none}}
+
+/* Expanded page header doubles as a native drag surface, but not its buttons. */
+.app.is-open .island .panel-head{cursor:grab;touch-action:none}
+.app.is-open .island .panel-head:active{cursor:grabbing}
+.app.is-open .island .head-actions,.app.is-open .island .head-actions button{cursor:pointer}

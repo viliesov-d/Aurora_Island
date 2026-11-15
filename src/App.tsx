@@ -1,16 +1,18 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "motion/react";
 const ReactMarkdown = lazy(() => import("react-markdown"));
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Battery, BatteryCharging, Bot, ChevronDown, Command, ExternalLink, Grip, MessageCircle, Minus, Pause, Play, Plus, Send, Settings2, ShieldCheck, Sparkles, Timer, Music2, X } from "lucide-react";
+import { Battery, BatteryCharging, Bot, ChevronDown, ChevronUp, Command, ExternalLink, Grip, MessageCircle, Minus, Pause, Play, Plus, Send, Settings2, ShieldCheck, Sparkles, Timer, Music2, X } from "lucide-react";
 import { defaults, type Message, type Preferences, type Tab, type Theme } from "./types";
 import { MediaPane, type MediaState, type VolumeState } from "./MediaPane";
 import { Toolbox } from "./Toolbox";
 import { CommandPalette } from "./CommandPalette";
 import { useMagneticPill } from "./useMagneticPill";
+import { useOutsideCollapse } from "./useOutsideCollapse";
+import { CompactActivity, useLiveActivity, activityIcons, type Activity } from "./LiveActivity";
 import { useClipboardWatcher, useReminderNotifications, showWindowsNotification } from "./nativeIntegration";
 
 const themeNames: Record<Theme,string> = { classic:"Classic", glass:"Liquid Glass", soft:"Soft Minimal", neon:"Neon" };
@@ -31,10 +33,20 @@ function loadPrefs(): Preferences {
 function readMessages(): Message[] { try { return JSON.parse(localStorage.getItem("aurora:chat") || "null") || initialMessages; } catch { return initialMessages; } }
 
 export default function App() {
-  const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false); const [tab,setTab]=useState<Tab>("home");
+  const [prefs,setPrefs]=useState(loadPrefs); const [expanded,setExpanded]=useState(false);
+  const [tab,setTab]=useState<Tab>(()=>{
+    try {
+      const previous=localStorage.getItem("aurora:last-tab");
+      return (["home","media","chat","tools","commands","settings"] as string[]).includes(previous||"") ? previous as Tab : "home";
+    }catch{return "home"}
+  });
+  const [hidden,setHidden]=useState(()=>{try{return localStorage.getItem("aurora:hidden")==="true"}catch{return false}});
+  const hiddenLatest=useRef(hidden); hiddenLatest.current=hidden;
+  const wasHidden=useRef(hidden);
+  const [toast,setToast]=useState<string|null>(null);
   useClipboardWatcher(prefs.clipboardWatch);
   useReminderNotifications(prefs.notifications);
-  const pillRef = useMagneticPill(prefs.cursorPull, expanded);
+  const pillRef = useMagneticPill(prefs.cursorPull&&!hidden, expanded);
   const [battery,setBattery]=useState<{batteryPercent:number|null;charging:boolean|null}|null>(null); const [messages,setMessages]=useState<Message[]>(readMessages); const [draft,setDraft]=useState(""); const [busy,setBusy]=useState(false); const [hasKey,setHasKey]=useState(false); const [apiKey,setApiKey]=useState(""); const [seconds,setSeconds]=useState(300); const [timerOn,setTimerOn]=useState(false); const [error,setError]=useState("");
   const [media,setMedia]=useState<MediaState|null>(null);
   const [volume,setVolume]=useState<VolumeState|null>(null);
@@ -50,19 +62,22 @@ export default function App() {
   const initializedLayout=useRef(false);
   const restoredPosition=useRef(false);
   const chatEnd=useRef<HTMLDivElement>(null);
+  const dragAnchor=useRef<{x:number;y:number;at:number}|null>(null);
+  const suppressClick=useRef(false);
+  const timerInitial=useRef(300);
   // Serializing layout mutations prevents stale window regions after rapid toggles.
-  const resizeWindow=useCallback((open:boolean, pillWidth:number, radius:number)=>{
+  const resizeWindow=useCallback((open:boolean, pillWidth:number, radius:number, hide=false)=>{
     layoutQueue.current=layoutQueue.current.catch(()=>{}).then(async()=>{
       const w=getCurrentWindow();
       const scale=await w.scaleFactor();
       const previous=await w.outerSize();
       const position=await w.outerPosition();
-      const frameWidth=open?568:pillWidth+32;
+      const frameWidth=hide?184:open?568:pillWidth+56;
       const monitor=await currentMonitor();
       const availableHeight=monitor
         ? (monitor.size.height-(position.y-monitor.position.y)-22)/scale
         : 710;
-      const frameHeight=open?Math.max(390,Math.min(710,availableHeight)):64;
+      const frameHeight=hide?40:open?Math.max(390,Math.min(710,availableHeight)):86;
       let x=Math.round(position.x+(previous.width-frameWidth*scale)/2);
       let y=position.y;
       if(!restoredPosition.current){
@@ -75,6 +90,19 @@ export default function App() {
           }
         } catch { /* Ignore invalid position data. */ }
       }
+      if(hide){
+        try { const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
+          if(Number.isFinite(saved?.centerX))x=Math.round(saved.centerX-frameWidth*scale/2);
+        }catch{}
+        y=monitor?.position.y??0;
+      }else if(previous.height<=Math.round(45*scale)){
+        // Restore the exact position held before the strip was shown.
+        try { const saved=JSON.parse(localStorage.getItem("aurora:position") || "null");
+          if(Number.isFinite(saved?.centerX)&&Number.isFinite(saved?.y)){
+            x=Math.round(saved.centerX-frameWidth*scale/2); y=Math.round(saved.y);
+          }
+        }catch{}
+      }
       if(open&&monitor){
         const minX=monitor.position.x+4;
         const maxX=monitor.position.x+monitor.size.width-Math.round(frameWidth*scale)-4;
@@ -85,7 +113,7 @@ export default function App() {
       }
       await w.setSize(new LogicalSize(frameWidth,frameHeight));
       await w.setPosition(new PhysicalPosition(x,y));
-      await invoke("set_native_region",{expanded:open,pillWidth,radius});
+      await invoke("set_native_region",{expanded:open,pillWidth,radius,hidden:hide});
     }).catch(err=>{ console.warn("Aurora layout update failed",err); });
     return layoutQueue.current;
   },[]);
@@ -93,23 +121,46 @@ export default function App() {
     window.clearTimeout(hoverTimer.current);
     window.clearTimeout(leaveTimer.current);
     skipHover.current=!open;
+    if(open&&hidden)setHidden(false);
     setExpanded(open);
   };
+  const hideToHandle=()=>{
+    window.clearTimeout(hoverTimer.current);
+    window.clearTimeout(leaveTimer.current);
+    skipHover.current=true;
+    setExpanded(false);
+    setHidden(true);
+  };
+  const restoreFromHandle=()=>{
+    setHidden(false);
+    skipHover.current=true;
+    setExpanded(false);
+  };
+  useOutsideCollapse(expanded&&!hidden,prefs.autoHide,()=>invokeMode(false));
+  useEffect(()=>{try{localStorage.setItem("aurora:last-tab",tab)}catch{}},[tab]);
+  useEffect(()=>{try{localStorage.setItem("aurora:hidden",String(hidden))}catch{}},[hidden]);
+  useEffect(()=>{
+    if(!toast)return;
+    const id=window.setTimeout(()=>setToast(null),4600);
+    return()=>window.clearTimeout(id);
+  },[toast]);
   const updatePrefs=(next:Partial<Preferences>)=>setPrefs(p=>({...p,...next}));
   useEffect(()=>{localStorage.setItem("aurora:prefs",JSON.stringify(prefs));document.documentElement.dataset.theme=prefs.theme;document.documentElement.style.setProperty("--pill-width",`${prefs.width}px`);document.documentElement.style.setProperty("--glass-blur",`${prefs.blur}px`);document.documentElement.style.setProperty("--glass-strength",String(prefs.glass/100));document.documentElement.style.setProperty("--motion-speed",`${prefs.speed/100}`);document.documentElement.style.setProperty("--surface-opacity",String(prefs.opacity/100));document.documentElement.style.setProperty("--island-radius",`${prefs.radius}px`);document.documentElement.style.setProperty("--accent",prefs.accent);},[prefs]);
   useEffect(()=>{
     window.clearTimeout(collapseResizeTimer.current);
-    if(expanded || !initializedLayout.current){
+    const recovering=wasHidden.current&&!hidden;
+    wasHidden.current=hidden;
+    if(hidden||recovering||expanded||!initializedLayout.current){
       initializedLayout.current=true;
-      void resizeWindow(expanded,prefs.width,prefs.radius);
+      void resizeWindow(expanded,prefs.width,prefs.radius,hidden);
     }else{
-      // Let the exit animation finish before shrinking the native hit region.
+      // Atoll waits until the spring finishes before shrinking the native region.
       collapseResizeTimer.current=window.setTimeout(()=>{
         void resizeWindow(false,prefs.width,prefs.radius);
-      },310);
+      },350);
     }
     return()=>window.clearTimeout(collapseResizeTimer.current);
-  },[expanded,prefs.width,prefs.radius,resizeWindow]);
+  },[expanded,hidden,prefs.width,prefs.radius,resizeWindow]);
   useEffect(()=>{
     void invoke("set_native_material",{theme:prefs.theme}).catch(err=>{
       console.warn("Native Acrylic material is not available on this Windows build",err);
@@ -125,7 +176,7 @@ export default function App() {
       saveTimer=window.setTimeout(async()=>{
         try {
           const [p,size]=await Promise.all([w.outerPosition(),w.outerSize()]);
-          if(active)localStorage.setItem("aurora:position",JSON.stringify({centerX:p.x+size.width/2,y:p.y}));
+          if(active&&!hiddenLatest.current)localStorage.setItem("aurora:position",JSON.stringify({centerX:p.x+size.width/2,y:p.y}));
         } catch { /* Never block the UI on location persistence. */ }
       },650);
     }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(()=>{});
@@ -148,6 +199,7 @@ export default function App() {
       window.clearTimeout(hoverTimer.current);
       window.clearTimeout(leaveTimer.current);
       skipHover.current=true;
+      setHidden(false);
       setTab("commands");
       setExpanded(true);
     }).then(dispose=>{if(active)unlisten=dispose;else dispose()}).catch(console.warn);
@@ -205,7 +257,7 @@ export default function App() {
     const tick=()=>{
       const remaining=Math.max(0,Math.ceil(((timerDeadline.current??Date.now())-Date.now())/1000));
       setSeconds(remaining);
-      if(remaining===0){setTimerOn(false);timerDeadline.current=null;
+      if(remaining===0){setTimerOn(false);timerDeadline.current=null;setToast("Таймер завершився");
         if(prefs.notifications)void showWindowsNotification("Aurora Island","Таймер завершився").catch(console.warn);
       }
     };
@@ -217,6 +269,7 @@ export default function App() {
     if(timerOn){setTimerOn(false);timerDeadline.current=null;return;}
     const duration=seconds||300;
     if(!seconds)setSeconds(duration);
+    timerInitial.current=duration;
     timerDeadline.current=Date.now()+duration*1000;
     setTimerOn(true);
   };
@@ -231,19 +284,20 @@ export default function App() {
     listen<string>("chat:delta",e=>setMessages(m=>{if(!m.length||m[m.length-1].role!=="assistant")return [...m,{role:"assistant",content:e.payload}];return [...m.slice(0,-1),{...m[m.length-1],content:m[m.length-1].content+e.payload}]})).then(f=>unlisten=f);
     return()=>unlisten?.();
   },[]);
-  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setTab("commands");setExpanded(true)}};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[]);
+  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{
+    if(e.key==="Escape"&&expanded){e.preventDefault();setExpanded(false)}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setHidden(false);setTab("commands");setExpanded(true)}
+  };window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[expanded]);
   const scheduleExpand=()=>{
     window.clearTimeout(leaveTimer.current);
-    if(expanded||!prefs.hoverExpand||skipHover.current)return;
+    if(hidden||expanded||!prefs.hoverExpand||skipHover.current)return;
     window.clearTimeout(hoverTimer.current);
-    hoverTimer.current=window.setTimeout(()=>{if(!skipHover.current)invokeMode(true)},650);
+    hoverTimer.current=window.setTimeout(()=>{if(!skipHover.current)invokeMode(true)},120);
   };
   const scheduleCollapse=()=>{
     window.clearTimeout(hoverTimer.current);
     skipHover.current=false;
-    if(!prefs.autoHide||!expanded||tab!=="home")return;
-    window.clearTimeout(leaveTimer.current);
-    leaveTimer.current=window.setTimeout(()=>invokeMode(false),1400);
+    // Native desktop watcher handles close from outside without losing text focus.
   };
   const sendMessage=async()=>{const text=draft.trim();if(!text||busy)return;setError("");setDraft("");const next=[...messages,{role:"user" as const,content:text}];setMessages([...next,{role:"assistant",content:""}]);setBusy(true);
     try { await invoke("stream_chat",{messages:next,model:"gpt-4.1-mini"}); }
@@ -252,29 +306,82 @@ export default function App() {
   };
   const saveKey=async()=>{try{await invoke("save_api_key",{key:apiKey});setHasKey(true);setApiKey("");setError("")}catch(e){setError(String(e))}};
   const attachText=async(file?:File)=>{if(!file)return;if(file.size>256*1024){setError("Файл завеликий. Максимум 256 КБ.");return}try{const content=await file.text();setDraft(v=>`${v}${v?"\n\n":""}[Вміст файлу ${file.name}]\n${content}`)}catch{setError("Не вдалося прочитати текстовий файл.")}};
-  const startDrag=(e:ReactPointerEvent)=>{
-    if(e.button!==0)return;
-    window.clearTimeout(hoverTimer.current);
-    window.clearTimeout(leaveTimer.current);
-    skipHover.current=true;
-    void getCurrentWindow().startDragging().catch(err=>setError(String(err)));
+  const beginDrag=(e:ReactPointerEvent)=>{
+    if(e.button!==0||hidden)return;
+    dragAnchor.current={x:e.clientX,y:e.clientY,at:performance.now()};
+    suppressClick.current=false;
   };
+  const moveDrag=(e:ReactPointerEvent)=>{
+    const start=dragAnchor.current;
+    if(!start||(e.buttons&1)===0||prefs.lockPosition)return;
+    const dx=e.clientX-start.x,dy=e.clientY-start.y,dt=Math.max(16,performance.now()-start.at);
+    if(dy<-22&&Math.abs(dx)<46&&dy/dt<-.65){
+      dragAnchor.current=null;suppressClick.current=true;hideToHandle();
+    }else if(Math.hypot(dx,dy)>=7){
+      dragAnchor.current=null;suppressClick.current=true;
+      window.clearTimeout(hoverTimer.current);
+      skipHover.current=true;
+      void getCurrentWindow().startDragging().catch(err=>setError(String(err)));
+    }
+  };
+  const endDrag=()=>{dragAnchor.current=null};
   const fmt=(n:number)=>`${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
+  const activities=useMemo<Activity[]>(()=>{
+    const list:Activity[]=[];
+    if(prefs.modules.timer&&timerOn) list.push({
+      id:"timer",title:"Таймер",detail:fmt(seconds),
+      icon:activityIcons.timer,progress:Math.max(0,Math.min(1,seconds/Math.max(60,timerInitial.current))),
+      onOpen:()=>{setTab("home");setExpanded(true);}
+    });
+    if(prefs.modules.media&&media?.available&&media.playing) list.push({
+      id:"music",title:media.title?.slice(0,34)||"Відтворення",
+      detail:media.artist?.slice(0,32)||"Музика Windows",
+      icon:activityIcons.music,
+      progress:media.durationSeconds>0?media.positionSeconds/media.durationSeconds:undefined,
+      onOpen:()=>{setTab("media");setExpanded(true);}
+    });
+    if(prefs.modules.battery&&battery?.charging&&battery.batteryPercent!=null) list.push({
+      id:"battery",title:"Заряджання",detail:`${battery.batteryPercent}%`,
+      icon:activityIcons.battery,progress:battery.batteryPercent/100,
+      onOpen:()=>{setTab("home");setExpanded(true);}
+    });
+    return list;
+  },[prefs.modules.timer,prefs.modules.media,prefs.modules.battery,timerOn,seconds,media,battery]);
+  const live=useLiveActivity(activities);
+  const smartToggle=()=>{
+    if(!expanded&&prefs.smartOpen){
+      if(live.selected?.id==="music")setTab("media");
+      else if(live.selected?.id==="timer")setTab("home");
+    }
+    invokeMode(!expanded);
+  };
 
-  return <main className={`app ${expanded?"is-open":""}`} onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}>
+  return <main className={`app ${expanded?"is-open":""} ${hidden?"is-hidden":""}`}>
     <section className={`island theme-${prefs.theme}`} style={{"--island-width":`${prefs.width}px`} as CSSProperties}>
-      <div ref={pillRef} className="pill" onPointerDown={e=>{if(e.target===e.currentTarget)startDrag(e)}}>
-        <span className="magnetic-edge" aria-hidden="true" />
-        <button type="button" className="drag-handle" onPointerDown={startDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button><button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={()=>invokeMode(!expanded)}><span className="brand-mark"><Sparkles size={14}/></span><span className="brand-name">aurora</span></button>
+      <motion.div layout="size" className="island-morph" transition={{type:"spring",stiffness:335,damping:30,mass:.95}} aria-hidden="true" />
+      {hidden?<button className="island-restore" onPointerEnter={restoreFromHandle} onClick={restoreFromHandle} aria-label="Повернути Aurora Island" title="Повернути Aurora Island"><span/></button>:<>
+      <div ref={pillRef} className="pill" onPointerEnter={scheduleExpand} onPointerLeave={scheduleCollapse}
+        onPointerDown={e=>{if(e.target===e.currentTarget)beginDrag(e)}} onPointerMove={moveDrag}
+        onPointerUp={endDrag} onPointerCancel={endDrag}
+        onClick={e=>{if(e.target===e.currentTarget&&!suppressClick.current)smartToggle();suppressClick.current=false;}}
+        onWheel={e=>{if(!expanded)live.rotate(e)}}>
+        <svg className="magnetic-svg" aria-hidden="true" focusable="false"><path className="magnetic-shape" /></svg>
+        <button type="button" className="drag-handle" onPointerDown={beginDrag} aria-label="Перемістити острів" title="Перемістити острів"><Grip size={14}/></button>
+        <button className="pill-brand" aria-label="Відкрити Aurora Island" onClick={smartToggle}>
+          <span className="brand-mark"><Sparkles size={14}/></span>
+          {!live.selected&&!toast&&<span className="brand-name">aurora</span>}
+        </button>
         <div className="pill-status">
-          {prefs.modules.battery&&battery?.batteryPercent!=null&&<span className="battery-chip">{battery.charging?<BatteryCharging size={14}/>:<Battery size={14}/>} {battery.batteryPercent}%</span>}
-          {prefs.modules.clock&&<span className="time-chip"><ClockDisplay kind="time"/></span>}
-          {prefs.modules.media&&media?.available&&prefs.width>=275&&<button className="pill-media" aria-label="Відкрити музику" title={media.title||"Керування музикою"} onClick={()=>{setTab("media");invokeMode(true)}}><Music2 size={15}/></button>}
-          <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={()=>void invokeMode(!expanded)}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
+          {!expanded&&toast&&<span className="live-toast" role="status">{toast}</span>}
+          {!expanded&&!toast&&live.selected&&<button className="live-open" onClick={live.selected.onOpen} title="Відкрити активність"><CompactActivity activity={live.selected} count={live.count}/></button>}
+          {!expanded&&!toast&&!live.selected&&prefs.modules.battery&&battery?.batteryPercent!=null&&<span className="battery-chip">{battery.charging?<BatteryCharging size={14}/>:<Battery size={14}/>} {battery.batteryPercent}%</span>}
+          {!expanded&&!toast&&!live.selected&&prefs.modules.clock&&<span className="time-chip"><ClockDisplay kind="time"/></span>}
+          {!expanded&&!toast&&!live.selected&&prefs.modules.media&&media?.available&&prefs.width>=275&&<button className="pill-media" aria-label="Відкрити музику" title={media.title||"Керування музикою"} onClick={()=>{setTab("media");invokeMode(true)}}><Music2 size={15}/></button>}
+          <button className="pill-expand" aria-label={expanded?"Згорнути":"Розгорнути"} onClick={smartToggle}>{expanded?<ChevronDown size={16}/>:<Plus size={16}/>}</button>
         </div>
       </div>
-      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" initial={{opacity:0,y:-16}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
-        <header className="panel-head"><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
+      <AnimatePresence initial={false}>{expanded&&<motion.div className="panel" onPointerLeave={scheduleCollapse} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{type:"spring",stiffness:320,damping:32,mass:.9}}>
+        <header className="panel-head" onPointerDown={e=>{if(!(e.target as HTMLElement).closest("button, input, textarea, a"))beginDrag(e)}} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><div><div className="eyebrow">PERSONAL DESKTOP COMPANION</div><h1>{tab==="home"?"Центр керування":tab==="media"?"Музика та звук":tab==="chat"?"Aurora AI":tab==="tools"?"Інструменти":tab==="commands"?"Команди":"Налаштування"}</h1></div><div className="head-actions"><button className="icon-btn" title="Налаштування" onClick={()=>setTab(tab==="settings"?"home":"settings")}><Settings2 size={16}/></button><button className="icon-btn" title="Згорнути" onClick={()=>void invokeMode(false)}><Minus size={17}/></button><button className="icon-btn" title="Сховати до смужки" onClick={hideToHandle}><ChevronUp size={17}/></button><button className="icon-btn" title="Приховати в трей" onClick={()=>invoke("hide_to_tray").catch(()=>{})}><X size={16}/></button></div></header>
         <nav className="tabs"><button className={tab==="home"?"active":""} onClick={()=>setTab("home")}><Command size={15}/> Огляд</button>{(prefs.modules.media||prefs.modules.volume)&&<button className={tab==="media"?"active":""} onClick={()=>setTab("media")}><Music2 size={15}/> Музика</button>}<button className={tab==="chat"?"active":""} onClick={()=>setTab("chat")}><MessageCircle size={15}/> AI чат</button><button className={tab==="tools"?"active":""} onClick={()=>setTab("tools")}><Command size={15}/> Інструменти</button><button className={tab==="commands"?"active":""} onClick={()=>setTab("commands")}><Command size={15}/> Пошук</button><button className={tab==="settings"?"active":""} onClick={()=>setTab("settings")}><Settings2 size={15}/> Налаштування</button></nav>
         <div className="panel-body">
           {tab==="home"&&<div className="home-grid">
@@ -295,6 +402,8 @@ export default function App() {
             <div className="settings-section"><div className="section-title">МОДУЛІ</div><Toggle label="Годинник" checked={prefs.modules.clock} onChange={v=>updatePrefs({modules:{...prefs.modules,clock:v}})}/><Toggle label="Батарея (Windows API)" checked={prefs.modules.battery} onChange={v=>updatePrefs({modules:{...prefs.modules,battery:v}})}/><Toggle label="Таймер" checked={prefs.modules.timer} onChange={v=>updatePrefs({modules:{...prefs.modules,timer:v}})}/><Toggle label="Керування музикою (SMTC)" checked={prefs.modules.media} onChange={v=>updatePrefs({modules:{...prefs.modules,media:v}})}/><Toggle label="Системна гучність" checked={prefs.modules.volume} onChange={v=>updatePrefs({modules:{...prefs.modules,volume:v}})}/></div>
             <div className="settings-section"><div className="section-title">ПОВЕДІНКА</div><Toggle label="Розгортати при наведенні (із затримкою)" checked={prefs.hoverExpand} onChange={v=>updatePrefs({hoverExpand:v})}/><Toggle label="Згортати після відведення курсора" checked={prefs.autoHide} onChange={v=>updatePrefs({autoHide:v})}/>
               <Toggle label="Пружний край, що тягнеться до курсора" checked={prefs.cursorPull} onChange={v=>updatePrefs({cursorPull:v})}/>
+              <Toggle label="Заблокувати положення острова" checked={prefs.lockPosition} onChange={v=>updatePrefs({lockPosition:v})}/>
+              <Toggle label="Розумне відкриття активності" checked={prefs.smartOpen} onChange={v=>updatePrefs({smartOpen:v})}/>
               <Toggle label="Глобальна клавіша Ctrl+Alt+Space" checked={prefs.globalHotkey} onChange={v=>updatePrefs({globalHotkey:v})}/>
               <Toggle label="Автоматична історія буфера обміну" checked={prefs.clipboardWatch} onChange={v=>updatePrefs({clipboardWatch:v})}/>
               <p className="tool-help">Автозбереження буфера вимкнено за замовчуванням. При ввімкненні нові записи відстежуються у Windows та зберігаються тільки в сесії, без запису на диск. У буфер можуть потрапити паролі й особисті дані.</p>
@@ -304,6 +413,7 @@ export default function App() {
         </div>
         <footer className="panel-footer"><span><span className="footer-mark"><Sparkles size={11}/></span> AURORA ISLAND <span className="footer-version">v0.1 · Windows</span></span><span>Перетягніть острів, щоб змінити позицію</span></footer>
       </motion.div>}</AnimatePresence>
+      </>}
     </section>
   </main>
 }
