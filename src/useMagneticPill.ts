@@ -2,103 +2,135 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 type CursorPosition = { x: number; y: number };
-type Side = "left" | "right" | "top" | "bottom";
-const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
+type Side = "left" | "right" | "bottom" | "top";
+const clamp = (v:number, lo:number, hi:number) => Math.max(lo,Math.min(hi,v));
+const fmt=(n:number)=>n.toFixed(2);
 
 /**
- * Animated magnetic perimeter. The Win32 cursor sample works while the mouse
- * is still OUTSIDE the hit-tested WebView window; no synthetic cursor capture.
- * Variables are written straight to the element to avoid React rerenders.
+ * A single rounded SVG silhouette draws the entire elastic outline, not a
+ * disconnected "blob". The field follows the nearest side like Atoll's FlowGeometry.
+ * It has no mouse hooks; native GetCursorPos only samples while the pill is visible.
  */
-export function useMagneticPill(enabled: boolean, expanded: boolean) {
-  const pillRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = pillRef.current;
-    if (!el) return;
-    const reset = () => {
-      el.style.setProperty("--magnet-strength", "0");
-      el.style.setProperty("--magnet-scale", "0.6");
-      el.style.setProperty("--lens-x", "50%");
-      el.style.setProperty("--lens-y", "0%");
+function flowingPath(width:number,height:number,side:Side,cx:number,cy:number,pull:number) {
+  const w=width,h=height,r=Math.min(24,h/2);
+  const b=Math.max(0,pull)*17;
+  const x=clamp(cx,r+54,w-r-54);
+  const y=clamp(cy,r+6,h-r-6);
+  const p:string[]=[];
+  const at=(a:number,b:number)=>fmt(a)+" "+fmt(b);
+  p.push("M",at(r,0));
+  if(side==="top"){
+    p.push("L",at(x-48,0));
+    p.push("C",at(x-19,0),at(x-18,-b),at(x,-b));
+    p.push("C",at(x+18,-b),at(x+19,0),at(x+48,0));
+  }
+  p.push("L",at(w-r,0),"Q",at(w,0),at(w,r));
+  if(side==="right"){
+    p.push("L",at(w,y-28));
+    p.push("C",at(w,y-12),at(w+b,y-12),at(w+b,y));
+    p.push("C",at(w+b,y+12),at(w,y+12),at(w,y+28));
+  }
+  p.push("L",at(w,h-r),"Q",at(w,h),at(w-r,h));
+  if(side==="bottom"){
+    p.push("L",at(x+52,h));
+    p.push("C",at(x+25,h),at(x+20,h+b),at(x,h+b));
+    p.push("C",at(x-20,h+b),at(x-25,h),at(x-52,h));
+  }
+  p.push("L",at(r,h),"Q",at(0,h),at(0,h-r));
+  if(side==="left"){
+    p.push("L",at(0,y+28));
+    p.push("C",at(0,y+12),at(-b,y+12),at(-b,y));
+    p.push("C",at(-b,y-12),at(0,y-12),at(0,y-28));
+  }
+  p.push("L",at(0,r),"Q",at(0,0),at(r,0),"Z");
+  return p.join(" ");
+}
+
+export function useMagneticPill(enabled:boolean,expanded:boolean) {
+  const pillRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    const el=pillRef.current;
+    if(!el) return;
+    const shape=el.querySelector<SVGPathElement>(".magnetic-shape");
+    const layer=el.querySelector<SVGSVGElement>(".magnetic-svg");
+    let alive=true;
+    let inFlight=false;
+    let pointer:CursorPosition|null=null;
+    let strength=0,velocity=0,last=0;
+    let raf=0;
+    let side:Side="bottom",px=0,py=0;
+    const reset=()=>{
+      if(layer) layer.style.opacity="0";
+      el.style.setProperty("--magnet-strength","0");
+      el.style.setProperty("--lens-x","50%");
+      el.style.setProperty("--lens-y","0%");
     };
-    if (!enabled || expanded || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      reset();
-      return;
+    if(!shape||!layer||!enabled||expanded||window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+      reset();return;
     }
-
-    let live = true;
-    let pending = false;
-    let cursor: CursorPosition | null = null;
-    let strength = 0;
-    let edgeX = 50, edgeY = 22, glowX = 50, glowY = 0;
-    let rotation = 0;
-    let side: Side = "right";
-
-    const poll = async () => {
-      if (!live || pending || document.hidden) return;
-      pending = true;
-      try {
-        cursor = await invoke<CursorPosition | null>("cursor_position");
-      } catch {
-        cursor = null;
-      } finally {
-        pending = false;
-      }
-    };
-
-    const animate = () => {
-      if (!live || document.hidden) return;
-      const rect = el.getBoundingClientRect();
-      let desired = 0;
-      if (cursor) {
-        // Distance from cursor to the nearest point on the capsule bounding box.
-        const distanceX = Math.max(rect.left - cursor.x, 0, cursor.x - rect.right);
-        const distanceY = Math.max(rect.top - cursor.y, 0, cursor.y - rect.bottom);
-        const distance = Math.hypot(distanceX, distanceY);
-        if (distance < 88) {
-          desired = Math.pow(1 - distance / 88, 1.65);
-          const nearLeft = Math.abs(cursor.x - rect.left);
-          const nearRight = Math.abs(cursor.x - rect.right);
-          const nearTop = Math.abs(cursor.y - rect.top);
-          const nearBottom = Math.abs(cursor.y - rect.bottom);
-          const closest = Math.min(nearLeft, nearRight, nearTop, nearBottom);
-          if (closest === nearLeft) side = "left";
-          else if (closest === nearRight) side = "right";
-          else if (closest === nearTop) side = "top";
-          else side = "bottom";
-
-          const x = cursor.x - rect.left;
-          const y = cursor.y - rect.top;
-          if (side === "left") { edgeX = 8; edgeY = clamp(y, 12, rect.height - 12); rotation = 180; }
-          else if (side === "right") { edgeX = rect.width - 8; edgeY = clamp(y, 12, rect.height - 12); rotation = 0; }
-          else if (side === "top") { edgeX = clamp(x, 18, rect.width - 18); edgeY = 8; rotation = -90; }
-          else { edgeX = clamp(x, 18, rect.width - 18); edgeY = rect.height - 8; rotation = 90; }
-          glowX = clamp(x / rect.width * 100, 0, 100);
-          glowY = clamp(y / rect.height * 100, 0, 100);
+    const tick=(now:number)=>{
+      raf=0;
+      if(!alive||document.hidden)return;
+      const rect=el.getBoundingClientRect();
+      const w=rect.width,h=rect.height;
+      let desired=0;
+      if(pointer){
+        const dx=Math.max(rect.left-pointer.x,0,pointer.x-rect.right);
+        const dy=Math.max(rect.top-pointer.y,0,pointer.y-rect.bottom);
+        const distance=Math.hypot(dx,dy);
+        const range=170;
+        if(distance<range){
+          const k=clamp(1-distance/range,0,1);
+          desired=k*k*(3-2*k);
+          const x=pointer.x-rect.left,y=pointer.y-rect.top;
+          const edges=[
+            {s:"left" as const,d:Math.abs(x)},
+            {s:"right" as const,d:Math.abs(x-w)},
+            {s:"top" as const,d:Math.abs(y)},
+            {s:"bottom" as const,d:Math.abs(y-h)},
+          ];
+          side=edges.reduce((a,b)=>a.d<b.d?a:b).s;
+          px=clamp(x,0,w);py=clamp(y,0,h);
+          el.style.setProperty("--lens-x",fmt(clamp(x/w*100,0,100))+"%");
+          el.style.setProperty("--lens-y",fmt(clamp(y/h*100,0,100))+"%");
         }
       }
-
-      // Spring-like settling with extra damping as the pointer moves away.
-      const response = desired > strength ? .28 : .16;
-      strength += (desired - strength) * response;
-      if (Math.abs(strength) < .002) strength = 0;
-      el.style.setProperty("--magnet-strength", strength.toFixed(3));
-      el.style.setProperty("--magnet-scale", (0.58 + strength * 0.54).toFixed(3));
-      el.style.setProperty("--edge-x", edgeX.toFixed(1) + "px");
-      el.style.setProperty("--edge-y", edgeY.toFixed(1) + "px");
-      el.style.setProperty("--edge-angle", rotation + "deg");
-      el.style.setProperty("--lens-x", glowX.toFixed(1) + "%");
-      el.style.setProperty("--lens-y", glowY.toFixed(1) + "%");
+      const dt=last?Math.min(.04,(now-last)/1000):1/60;last=now;
+      // Stable semi-implicit spring with substeps for variable refresh rates.
+      const step=dt/Math.max(1,Math.ceil(dt/.006));
+      const n=Math.max(1,Math.ceil(dt/.006));
+      for(let i=0;i<n;i++){
+        velocity+=(210*(desired-strength)-27*velocity)*step;
+        strength+=velocity*step;
+      }
+      if(Math.abs(desired-strength)<.003&&Math.abs(velocity)<.04){
+        strength=desired;velocity=0;
+      }
+      const value=clamp(strength,0,1.12);
+      el.style.setProperty("--magnet-strength",fmt(value));
+      if(value>.002){
+        shape.setAttribute("d",flowingPath(w,h,side,px,py,value));
+        layer.setAttribute("viewBox","-22 -22 "+fmt(w+44)+" "+fmt(h+44));
+        layer.style.opacity=fmt(Math.min(1,value*.88));
+      }else{
+        layer.style.opacity="0";
+      }
+      if(value>.002||desired>.002||Math.abs(velocity)>.03)raf=requestAnimationFrame(tick);
+    };
+    const schedule=()=>{if(!raf&&alive)raf=requestAnimationFrame(tick)};
+    const poll=async()=>{
+      if(!alive||inFlight||document.hidden)return;
+      inFlight=true;
+      try{
+        pointer=await invoke<CursorPosition|null>("cursor_position");
+      }catch{pointer=null}
+      finally{inFlight=false;schedule()}
     };
     void poll();
-    const pollTimer = window.setInterval(() => { void poll(); }, 70);
-    const animationTimer = window.setInterval(animate, 25);
-    return () => {
-      live = false;
-      window.clearInterval(pollTimer);
-      window.clearInterval(animationTimer);
-      reset();
+    const id=window.setInterval(()=>void poll(),85);
+    return()=>{
+      alive=false;window.clearInterval(id);if(raf)cancelAnimationFrame(raf);reset();
     };
-  }, [enabled, expanded]);
+  },[enabled,expanded]);
   return pillRef;
 }
